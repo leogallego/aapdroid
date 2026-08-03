@@ -166,7 +166,7 @@ MCP servers with `readOnly: true` in config have write tools filtered out. Detec
 
 ### Per-Tool Enable/Disable
 
-Users can toggle individual tools via Settings → Tools tab. State persisted via `IAssistantRepository.saveToolState()`.
+Users can toggle individual tools via Settings → Local Tools and MCP Servers tabs. State persisted via `IAssistantRepository.saveToolState()`.
 
 ## Token Optimization
 

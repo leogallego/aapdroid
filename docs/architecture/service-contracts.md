@@ -298,9 +298,8 @@ for one-shot discovery of external endpoints would be over-engineering.
   | JVM-specific shared logic (MCP, TLS) | `shared/src/jvmTest/` | `kotlin.test` |
   | ViewModel tests | `composeApp/src/commonTest/` | `kotlin.test` |
   | Shared-layer integration tests (backup, serialization) | `composeApp/src/commonTest/` | `kotlin.test` |
-  | Compose Desktop screen smoke tests (planned: #372) | `composeApp/src/desktopTest/` | `kotlin.test` + Compose MP test API |
+  | Compose Desktop screen smoke tests | `composeApp/src/desktopTest/` | `kotlin.test` + Compose MP test API |
   | Android-only features (AppFunctions, widgets, WorkManager) | `app/src/test/` | JUnit4 |
-  | Robolectric screen tests (deprecated: #372) | `app/src/test/` | JUnit4 + Robolectric |
 
 - **`kotlin.test` in all KMP-compatible source sets.** `commonTest`, `jvmTest`, and
   `desktopTest` must use `kotlin.test` annotations (`@Test`, `@BeforeTest`, `@AfterTest`).
@@ -382,6 +381,21 @@ for one-shot discovery of external endpoints would be over-engineering.
 
 ---
 
+## 11. String Resources
+
+### Hard Rules
+
+- **No hardcoded user-facing strings in Composables.** All UI text must use
+  `stringResource()` from Compose Multiplatform resources
+  (`composeApp/src/commonMain/composeResources/values/strings.xml`).
+  Hardcoded strings in `Text()`, `placeholder`, `label`, `contentDescription`,
+  and similar parameters are prohibited.
+
+- **Exceptions:** log messages, debug output, and test assertions may use
+  hardcoded strings.
+
+---
+
 ## Versioning and Maintenance
 
 This document follows the project's semver scheme. Updates require a PR with
@@ -407,3 +421,4 @@ tombstones or "removed" markers.
 | 1.1.0 | 2026-06-20 | Tool interface sealed (#364), test helpers documented |
 | 1.2.0 | 2026-06-21 | Add §10 Test Infrastructure contracts (#392) |
 | 1.2.1 | 2026-06-22 | Add lifecycle tags for transitional rules (#392) |
+| 1.3.0 | 2026-06-26 | Add §11 String Resources contract (#293) |
