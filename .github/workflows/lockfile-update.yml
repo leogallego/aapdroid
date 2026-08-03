@@ -48,7 +48,7 @@ jobs:
         run: chmod +x gradlew
 
       - name: Regenerate lockfiles
-        run: ./gradlew dependencies --write-locks
+        run: ./gradlew :app:dependencies :shared:dependencies :composeApp:dependencies --write-locks
 
       - name: Commit and push updated lockfiles
         run: |
