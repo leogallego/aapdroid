@@ -3,85 +3,31 @@ package io.github.leogallego.ansiblejane.assistant.llm
 import ai.koog.agents.core.tools.ToolDescriptor
 import ai.koog.prompt.Prompt
 import ai.koog.http.client.KoogHttpClientException
-import ai.koog.http.client.KoogHttpClient
 import ai.koog.http.client.ktor.KtorKoogHttpClient
 import ai.koog.prompt.executor.clients.LLMClientException
 import ai.koog.prompt.executor.clients.openai.OpenAIClientSettings
 import ai.koog.prompt.executor.clients.openai.OpenAILLMClient
-import ai.koog.prompt.executor.clients.openai.base.models.OpenAIFunction
-import ai.koog.prompt.executor.clients.openai.base.models.OpenAIMessage
-import ai.koog.prompt.executor.clients.openai.base.models.OpenAIToolCall
-import ai.koog.prompt.executor.clients.openai.base.models.OpenAIToolChoice
-import ai.koog.prompt.executor.clients.openai.base.models.OpenAITool
 import ai.koog.prompt.llm.LLMCapability
 import ai.koog.prompt.llm.LLModel
 import ai.koog.prompt.llm.LLMProvider as KoogLLMProvider
-import ai.koog.prompt.params.LLMParams
 import ai.koog.prompt.streaming.StreamFrame
 import io.github.leogallego.ansiblejane.assistant.data.LlmProviderConfig
 import io.github.leogallego.ansiblejane.assistant.engine.DebugLog as Log
 import io.github.leogallego.ansiblejane.network.createPlatformHttpClient
-import io.ktor.client.HttpClient
 import io.ktor.client.plugins.ClientRequestException
 import io.ktor.client.plugins.ServerResponseException
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.catch
 import kotlinx.coroutines.flow.flow
-import kotlinx.serialization.json.Json
 import io.ktor.client.network.sockets.SocketTimeoutException
-
-private class FixedOpenAILLMClient(
-    apiKey: String,
-    settings: OpenAIClientSettings,
-    httpClientFactory: KoogHttpClient.Factory
-) : OpenAILLMClient(apiKey = apiKey, settings = settings, httpClientFactory = httpClientFactory) {
-
-    override fun serializeProviderChatRequest(
-        messages: List<OpenAIMessage>,
-        model: LLModel,
-        tools: List<OpenAITool>?,
-        toolChoice: OpenAIToolChoice?,
-        params: LLMParams,
-        stream: Boolean
-    ): String {
-        // Koog bug: convertPromptToMessages does Json.encodeToString(it.args)
-        // which double-encodes the tool call arguments string.
-        // Fix: unwrap the extra quoting before serialization.
-        val fixed = messages.map { msg ->
-            if (msg is OpenAIMessage.Assistant && msg.toolCalls != null) {
-                OpenAIMessage.Assistant(
-                    content = msg.content,
-                    reasoningContent = msg.reasoningContent,
-                    toolCalls = msg.toolCalls!!.map { tc ->
-                        OpenAIToolCall(
-                            id = tc.id,
-                            function = OpenAIFunction(
-                                name = tc.function.name,
-                                arguments = unwrapDoubleEncoding(tc.function.arguments)
-                            )
-                        )
-                    }
-                )
-            } else msg
-        }
-        return super.serializeProviderChatRequest(fixed, model, tools, toolChoice, params, stream)
-    }
-
-    private fun unwrapDoubleEncoding(args: String): String {
-        if (!args.startsWith("\"")) return args
-        return try {
-            Json.decodeFromString<String>(args)
-        } catch (_: Exception) {
-            args
-        }
-    }
-}
 
 class KoogLlmProvider(
     private val config: LlmProviderConfig.OpenAiCompatible,
     trustSelfSigned: Boolean = false
 ) : LlmProvider, AutoCloseable {
 
+    // Koog 1.1.1 emits Tool.Call.args verbatim (#2095), so the previous
+    // FixedOpenAILLMClient double-encoding unwrap is no longer needed.
     private val client: OpenAILLMClient = run {
         val parsed = io.ktor.http.Url(config.url.trimEnd('/'))
         val baseUrl = "${parsed.protocol.name}://${parsed.host}" +
@@ -98,7 +44,7 @@ class KoogLlmProvider(
         } else {
             KtorKoogHttpClient.Factory()
         }
-        FixedOpenAILLMClient(
+        OpenAILLMClient(
             apiKey = config.apiKey ?: "",
             settings = settings,
             httpClientFactory = factory

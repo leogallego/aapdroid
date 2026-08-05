@@ -2,7 +2,9 @@ package io.github.leogallego.ansiblejane.assistant.llm
 
 import ai.koog.prompt.Prompt
 import ai.koog.prompt.message.Message
+import ai.koog.prompt.message.MessagePart
 import ai.koog.prompt.message.RequestMetaInfo
+import ai.koog.prompt.message.ResponseMetaInfo
 import ai.koog.prompt.streaming.StreamFrame
 import io.github.leogallego.ansiblejane.assistant.data.LlmProviderConfig
 import io.github.leogallego.ansiblejane.assistant.tools.ToolSpec
@@ -18,6 +20,7 @@ import kotlin.test.AfterTest
 import kotlin.test.BeforeTest
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertFalse
 import kotlin.test.assertTrue
 
 class KoogLlmProviderTest {
@@ -108,6 +111,51 @@ class KoogLlmProviderTest {
         assertEquals(1, toolCalls.size)
         assertEquals("call_1", toolCalls[0].id)
         assertEquals("list_jobs", toolCalls[0].name)
+    }
+
+    @Test
+    fun `generateStream serializes tool call arguments without double encoding`() = runTest {
+        // Regression for Koog #2095 / Jane FixedOpenAILLMClient removal:
+        // args must be emitted as a JSON object string, not a JSON-encoded string.
+        server.enqueue(sseTextResponse("done"))
+
+        val prompt = Prompt(
+            messages = listOf(
+                Message.User(content = "List failed jobs", metaInfo = RequestMetaInfo.Empty),
+                Message.Assistant(
+                    parts = listOf(
+                        MessagePart.Tool.Call(
+                            id = "call_1",
+                            tool = "list_jobs",
+                            args = """{"status":"failed"}"""
+                        )
+                    ),
+                    metaInfo = ResponseMetaInfo.Empty
+                ),
+                Message.User(
+                    part = MessagePart.Tool.Result(
+                        id = "call_1",
+                        tool = "list_jobs",
+                        output = "[]"
+                    ),
+                    metaInfo = RequestMetaInfo.Empty
+                )
+            ),
+            id = "tool-roundtrip"
+        )
+
+        provider.generateStream(prompt, emptyList()).toList()
+
+        val body = server.takeRequest().body.readUtf8()
+        assertTrue(
+            body.contains(""""arguments":"{\"status\":\"failed\"}"""") ||
+                body.contains(""""arguments":{"status":"failed"}"""),
+            "Expected single-encoded tool args in request body, got: $body"
+        )
+        assertFalse(
+            body.contains(""""arguments":"\"{\\\"status\\\":\\\"failed\\\"}\""""),
+            "Tool args were double-encoded: $body"
+        )
     }
 
     @Test
