@@ -64,7 +64,6 @@ import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.runtime.collectAsState
-import io.github.leogallego.ansiblejane.assistant.engine.TokenUsage
 import io.github.leogallego.ansiblejane.assistant.data.KnownProvider
 import io.github.leogallego.ansiblejane.assistant.data.LlmProviderConfig
 import io.github.leogallego.ansiblejane.presentation.main.MainViewModel
@@ -89,6 +88,7 @@ fun MainScreen(
     val savedConfigs = mainUiState.savedConfigs
     val activeProviderKey = mainUiState.activeProviderKey
     val sessionTokens = mainUiState.sessionTokens
+    val sessionTokensFormatted = mainUiState.sessionTokensFormatted
 
     val tabs = TopLevelTab.entries
     val dashboardTabIndex = tabs.indexOfFirst { it is TopLevelTab.Dashboard }.coerceAtLeast(0)
@@ -192,6 +192,7 @@ fun MainScreen(
                                 activeProviderKey = activeProviderKey,
                                 savedConfigs = savedConfigs,
                                 sessionTokens = sessionTokens,
+                                sessionTokensFormatted = sessionTokensFormatted,
                                 onSwitchProvider = { key ->
                                     showProviderMenu = false
                                     mainViewModel.switchActiveProvider(key)
@@ -332,6 +333,7 @@ private fun ProviderDropdownMenu(
     activeProviderKey: String?,
     savedConfigs: Map<String, LlmProviderConfig>,
     sessionTokens: Int,
+    sessionTokensFormatted: String,
     onSwitchProvider: (String) -> Unit,
     onNavigateToSettings: () -> Unit
 ) {
@@ -345,10 +347,9 @@ private fun ProviderDropdownMenu(
         shape = RoundedCornerShape(16.dp)
     ) {
         if (sessionTokens > 0) {
-            val formatted = TokenUsage.formatTokenCount(sessionTokens)
             val tokensCd = stringResource(Res.string.provider_tokens_session_cd, sessionTokens)
             Text(
-                text = stringResource(Res.string.provider_tokens, formatted),
+                text = stringResource(Res.string.provider_tokens, sessionTokensFormatted),
                 style = MaterialTheme.typography.labelSmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 modifier = Modifier

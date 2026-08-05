@@ -146,7 +146,7 @@ private fun HostDetailFullScreen(
         parameters = { parametersOf(host.id) },
     )
     val uiState by viewModel.uiState.collectAsState()
-    val content = uiState as? HostDetailUiState.Content ?: HostDetailUiState.Content()
+    val content = uiState as? HostDetailUiState.Success ?: HostDetailUiState.Success()
     val facts = content.facts
     val factsLoading = content.factsLoading
     val jobSummaries = content.jobSummaries

@@ -55,8 +55,8 @@ class HostDetailViewModelTest {
 
         viewModel.uiState.test {
             val state = awaitItem()
-            assertTrue(state is HostDetailUiState.Content)
-            val content = state as HostDetailUiState.Content
+            assertTrue(state is HostDetailUiState.Success)
+            val content = state as HostDetailUiState.Success
             assertFalse(content.factsLoading)
             assertFalse(content.jobsLoading)
             assertEquals("Linux", (content.facts["ansible_os"] as JsonPrimitive).content)
@@ -74,8 +74,8 @@ class HostDetailViewModelTest {
 
         viewModel.uiState.test {
             val state = awaitItem()
-            assertTrue(state is HostDetailUiState.Content)
-            val content = state as HostDetailUiState.Content
+            assertTrue(state is HostDetailUiState.Success)
+            val content = state as HostDetailUiState.Success
             assertFalse(content.factsLoading)
             assertFalse(content.jobsLoading)
             assertTrue(content.facts.isEmpty())
@@ -92,8 +92,8 @@ class HostDetailViewModelTest {
 
         viewModel.uiState.test {
             val state = awaitItem()
-            assertTrue(state is HostDetailUiState.Content)
-            val content = state as HostDetailUiState.Content
+            assertTrue(state is HostDetailUiState.Success)
+            val content = state as HostDetailUiState.Success
             assertFalse(content.factsLoading)
             assertFalse(content.jobsLoading)
             assertTrue(content.facts.isEmpty())

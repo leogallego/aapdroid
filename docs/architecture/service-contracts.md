@@ -426,3 +426,4 @@ tombstones or "removed" markers.
 | 1.2.0 | 2026-06-21 | Add §10 Test Infrastructure contracts (#392) |
 | 1.2.1 | 2026-06-22 | Add lifecycle tags for transitional rules (#392) |
 | 1.3.0 | 2026-06-26 | Add §11 String Resources contract (#293) |
+| 1.3.1 | 2026-08-05 | Document Android-only BackgroundWorker approval polling (#433) |

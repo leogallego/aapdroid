@@ -4,6 +4,7 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import io.github.leogallego.ansiblejane.assistant.data.IAssistantRepository
 import io.github.leogallego.ansiblejane.assistant.data.LlmProviderConfig
+import io.github.leogallego.ansiblejane.assistant.engine.TokenUsage
 import io.github.leogallego.ansiblejane.data.ITokenManager
 import io.github.leogallego.ansiblejane.model.AapInstance
 import kotlinx.coroutines.flow.SharingStarted
@@ -12,12 +13,17 @@ import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 
+/**
+ * Always-ready shell/top-bar state (no Idle/Loading/Error lifecycle).
+ * Config types live in assistant.data as shared domain models.
+ */
 data class MainUiState(
     val activeInstance: AapInstance? = null,
     val activeConfig: LlmProviderConfig? = null,
     val savedConfigs: Map<String, LlmProviderConfig> = emptyMap(),
     val activeProviderKey: String? = null,
     val sessionTokens: Int = 0,
+    val sessionTokensFormatted: String = "0",
 )
 
 class MainViewModel(
@@ -38,6 +44,7 @@ class MainViewModel(
             savedConfigs = savedConfigs,
             activeProviderKey = activeProviderKey,
             sessionTokens = sessionTokens,
+            sessionTokensFormatted = TokenUsage.formatTokenCount(sessionTokens),
         )
     }.stateIn(
         scope = viewModelScope,

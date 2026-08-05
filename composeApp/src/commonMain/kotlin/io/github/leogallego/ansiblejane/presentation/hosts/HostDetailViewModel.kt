@@ -16,7 +16,7 @@ sealed interface HostDetailUiState {
      * Detail content with independent section loading flags.
      * Repository failures surface as empty sections (same UX as the former UI-layer fetch).
      */
-    data class Content(
+    data class Success(
         val factsLoading: Boolean = true,
         val facts: Map<String, JsonElement> = emptyMap(),
         val jobsLoading: Boolean = true,
@@ -29,7 +29,7 @@ class HostDetailViewModel(
     private val hostRepository: IHostRepository,
 ) : ViewModel() {
 
-    private val _uiState = MutableStateFlow<HostDetailUiState>(HostDetailUiState.Content())
+    private val _uiState = MutableStateFlow<HostDetailUiState>(HostDetailUiState.Success())
     val uiState: StateFlow<HostDetailUiState> = _uiState.asStateFlow()
 
     init {
@@ -39,26 +39,26 @@ class HostDetailViewModel(
     fun load() {
         if (hostId <= 0) {
             _uiState.update {
-                HostDetailUiState.Content(
+                HostDetailUiState.Success(
                     factsLoading = false,
                     jobsLoading = false,
                 )
             }
             return
         }
-        _uiState.update { HostDetailUiState.Content() }
+        _uiState.update { HostDetailUiState.Success() }
         viewModelScope.launch {
             hostRepository.getHostFacts(hostId).fold(
                 onSuccess = { facts ->
                     _uiState.update { state ->
-                        val content = state as? HostDetailUiState.Content ?: HostDetailUiState.Content()
-                        content.copy(factsLoading = false, facts = facts)
+                        val success = state as? HostDetailUiState.Success ?: HostDetailUiState.Success()
+                        success.copy(factsLoading = false, facts = facts)
                     }
                 },
                 onFailure = {
                     _uiState.update { state ->
-                        val content = state as? HostDetailUiState.Content ?: HostDetailUiState.Content()
-                        content.copy(factsLoading = false, facts = emptyMap())
+                        val success = state as? HostDetailUiState.Success ?: HostDetailUiState.Success()
+                        success.copy(factsLoading = false, facts = emptyMap())
                     }
                 }
             )
@@ -66,14 +66,14 @@ class HostDetailViewModel(
             hostRepository.getHostJobSummaries(hostId).fold(
                 onSuccess = { result ->
                     _uiState.update { state ->
-                        val content = state as? HostDetailUiState.Content ?: HostDetailUiState.Content()
-                        content.copy(jobsLoading = false, jobSummaries = result.summaries)
+                        val success = state as? HostDetailUiState.Success ?: HostDetailUiState.Success()
+                        success.copy(jobsLoading = false, jobSummaries = result.summaries)
                     }
                 },
                 onFailure = {
                     _uiState.update { state ->
-                        val content = state as? HostDetailUiState.Content ?: HostDetailUiState.Content()
-                        content.copy(jobsLoading = false, jobSummaries = emptyList())
+                        val success = state as? HostDetailUiState.Success ?: HostDetailUiState.Success()
+                        success.copy(jobsLoading = false, jobSummaries = emptyList())
                     }
                 }
             )
