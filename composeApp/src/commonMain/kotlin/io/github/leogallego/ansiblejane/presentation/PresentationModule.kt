@@ -8,9 +8,11 @@ import io.github.leogallego.ansiblejane.presentation.settings.BackupViewModel
 import io.github.leogallego.ansiblejane.presentation.jobs.JobStatusViewModel
 import io.github.leogallego.ansiblejane.presentation.jobs.RecentJobsViewModel
 import io.github.leogallego.ansiblejane.presentation.eda.EdaAuditViewModel
+import io.github.leogallego.ansiblejane.presentation.hosts.HostDetailViewModel
 import io.github.leogallego.ansiblejane.presentation.hosts.HostsViewModel
 import io.github.leogallego.ansiblejane.presentation.hosts.InventoryHostsViewModel
 import io.github.leogallego.ansiblejane.presentation.inventory.InventoriesViewModel
+import io.github.leogallego.ansiblejane.presentation.main.MainViewModel
 import io.github.leogallego.ansiblejane.presentation.schedules.SchedulesViewModel
 import io.github.leogallego.ansiblejane.presentation.templates.TemplatesViewModel
 import io.github.leogallego.ansiblejane.presentation.workflows.WorkflowJobStatusViewModel
@@ -40,6 +42,13 @@ val presentationModule = module {
     viewModelOf(::InventoriesViewModel)
     viewModelOf(::InventoryHostsViewModel)
     viewModelOf(::HostsViewModel)
+    viewModel { params ->
+        HostDetailViewModel(
+            hostId = params.get(),
+            hostRepository = get(),
+        )
+    }
+    viewModelOf(::MainViewModel)
     viewModelOf(::BackupViewModel)
     viewModel {
         AssistantViewModel(
