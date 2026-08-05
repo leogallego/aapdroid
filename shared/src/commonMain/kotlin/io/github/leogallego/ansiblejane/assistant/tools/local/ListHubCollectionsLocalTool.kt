@@ -4,14 +4,14 @@ import ai.koog.agents.core.tools.annotations.LLMDescription
 import ai.koog.serialization.typeToken
 import io.github.leogallego.ansiblejane.assistant.tools.AapLocalTool
 import io.github.leogallego.ansiblejane.assistant.tools.listToolJson
-import io.github.leogallego.ansiblejane.data.HubRepository
+import io.github.leogallego.ansiblejane.data.IHubRepository
 import io.github.leogallego.ansiblejane.data.ITokenManager
 import io.github.leogallego.ansiblejane.model.AapComponent
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
 
 class ListHubCollectionsLocalTool(
-    private val repository: HubRepository,
+    private val repository: IHubRepository,
     private val tokenManager: ITokenManager
 ) : AapLocalTool<ListHubCollectionsLocalTool.Args>(
     typeToken<Args>(), Args.serializer(),

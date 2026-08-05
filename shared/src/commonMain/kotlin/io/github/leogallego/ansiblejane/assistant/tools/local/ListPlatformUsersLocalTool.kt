@@ -5,13 +5,13 @@ import ai.koog.serialization.typeToken
 import io.github.leogallego.ansiblejane.assistant.tools.AapLocalTool
 import io.github.leogallego.ansiblejane.assistant.tools.listToolJson
 import io.github.leogallego.ansiblejane.data.ITokenManager
-import io.github.leogallego.ansiblejane.data.PlatformRepository
+import io.github.leogallego.ansiblejane.data.IPlatformRepository
 import io.github.leogallego.ansiblejane.model.AapComponent
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
 
 class ListPlatformUsersLocalTool(
-    private val repository: PlatformRepository,
+    private val repository: IPlatformRepository,
     private val tokenManager: ITokenManager
 ) : AapLocalTool<ListPlatformUsersLocalTool.Args>(
     typeToken<Args>(), Args.serializer(),

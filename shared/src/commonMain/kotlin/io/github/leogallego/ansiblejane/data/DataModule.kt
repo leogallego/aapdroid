@@ -34,8 +34,8 @@ val sharedRepositoryModule = module {
     single { CredentialRepository(get<IAapApiProvider>()) } bind ICredentialRepository::class
     single { ProjectRepository(get<IAapApiProvider>()) } bind IProjectRepository::class
     single { EdaActivationRepository(get<IAapApiProvider>()) } bind IEdaActivationRepository::class
-    single { ControllerReadOnlyRepository(get<IAapApiProvider>()) }
-    single { EdaReadOnlyRepository(get<IAapApiProvider>()) }
-    single { PlatformRepository(get<IAapApiProvider>()) }
-    single { HubRepository(get<IAapApiProvider>()) }
+    single { ControllerReadOnlyRepository(get<IAapApiProvider>()) } bind IControllerReadOnlyRepository::class
+    single { EdaReadOnlyRepository(get<IAapApiProvider>()) } bind IEdaReadOnlyRepository::class
+    single { PlatformRepository(get<IAapApiProvider>()) } bind IPlatformRepository::class
+    single { HubRepository(get<IAapApiProvider>()) } bind IHubRepository::class
 }

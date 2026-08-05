@@ -4,12 +4,12 @@ import ai.koog.agents.core.tools.annotations.LLMDescription
 import ai.koog.serialization.typeToken
 import io.github.leogallego.ansiblejane.assistant.tools.AapLocalTool
 import io.github.leogallego.ansiblejane.assistant.tools.listToolJson
-import io.github.leogallego.ansiblejane.data.EdaReadOnlyRepository
+import io.github.leogallego.ansiblejane.data.IEdaReadOnlyRepository
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
 
 class ListEdaRulebooksLocalTool(
-    private val repository: EdaReadOnlyRepository
+    private val repository: IEdaReadOnlyRepository
 ) : AapLocalTool<ListEdaRulebooksLocalTool.Args>(
     typeToken<Args>(),
     Args.serializer(),
