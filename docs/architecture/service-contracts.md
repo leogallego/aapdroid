@@ -130,6 +130,10 @@ for one-shot discovery of external endpoints would be over-engineering.
   features go in `app/` without ceremony.
 - **Shared logic must not live in `app/`.** If a tool, repository, or engine feature
   is in `app/`, desktop can never reach it. Use `shared/commonMain` for reusable logic.
+- **`BackgroundWorker` approval polling is Android-only.** Android schedules
+  `ApprovalPollingWorker` via WorkManager in `app/`. The JVM/`desktop` `actual` keeps
+  the `schedulePolling` / `cancelPolling` surface for expect/actual parity but is an
+  intentional no-op (no desktop polling parity planned).
 
 ### Source Set Rules
 

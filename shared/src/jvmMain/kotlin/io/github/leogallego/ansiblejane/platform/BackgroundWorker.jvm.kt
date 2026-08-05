@@ -23,8 +23,12 @@ actual class BackgroundWorker {
                 }
             }
 
+            // Intentional no-op: workflow approval polling is Android-only
+            // (WorkManager + ApprovalPollingWorker in app/). Desktop keeps the
+            // schedule/cancel API for expect/actual parity but does not poll.
+            // See CLAUDE.md / service-contracts.md §3.
             val task = newExecutor.scheduleAtFixedRate(
-                { /* TODO(#243): wire to actual approval polling when assistant is ported */ },
+                { /* no-op: approval polling is Android-only */ },
                 intervalMinutes,
                 intervalMinutes,
                 TimeUnit.MINUTES
