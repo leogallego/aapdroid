@@ -4,6 +4,9 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import io.github.leogallego.ansiblejane.data.IHostRepository
 import io.github.leogallego.ansiblejane.model.JobHostSummary
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.async
+import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -32,11 +35,14 @@ class HostDetailViewModel(
     private val _uiState = MutableStateFlow<HostDetailUiState>(HostDetailUiState.Success())
     val uiState: StateFlow<HostDetailUiState> = _uiState.asStateFlow()
 
+    private var loadJob: Job? = null
+
     init {
         load()
     }
 
     fun load() {
+        loadJob?.cancel()
         if (hostId <= 0) {
             _uiState.update {
                 HostDetailUiState.Success(
@@ -47,36 +53,33 @@ class HostDetailViewModel(
             return
         }
         _uiState.update { HostDetailUiState.Success() }
-        viewModelScope.launch {
-            hostRepository.getHostFacts(hostId).fold(
-                onSuccess = { facts ->
-                    _uiState.update { state ->
-                        val success = state as? HostDetailUiState.Success ?: HostDetailUiState.Success()
-                        success.copy(factsLoading = false, facts = facts)
-                    }
-                },
-                onFailure = {
-                    _uiState.update { state ->
-                        val success = state as? HostDetailUiState.Success ?: HostDetailUiState.Success()
-                        success.copy(factsLoading = false, facts = emptyMap())
-                    }
+        loadJob = viewModelScope.launch {
+            coroutineScope {
+                val factsDeferred = async {
+                    hostRepository.getHostFacts(hostId).fold(
+                        onSuccess = { it },
+                        onFailure = { emptyMap() },
+                    )
                 }
-            )
+                val jobsDeferred = async {
+                    hostRepository.getHostJobSummaries(hostId).fold(
+                        onSuccess = { it.summaries },
+                        onFailure = { emptyList() },
+                    )
+                }
 
-            hostRepository.getHostJobSummaries(hostId).fold(
-                onSuccess = { result ->
-                    _uiState.update { state ->
-                        val success = state as? HostDetailUiState.Success ?: HostDetailUiState.Success()
-                        success.copy(jobsLoading = false, jobSummaries = result.summaries)
-                    }
-                },
-                onFailure = {
-                    _uiState.update { state ->
-                        val success = state as? HostDetailUiState.Success ?: HostDetailUiState.Success()
-                        success.copy(jobsLoading = false, jobSummaries = emptyList())
-                    }
+                val facts = factsDeferred.await()
+                _uiState.update { state ->
+                    val success = state as HostDetailUiState.Success
+                    success.copy(factsLoading = false, facts = facts)
                 }
-            )
+
+                val jobSummaries = jobsDeferred.await()
+                _uiState.update { state ->
+                    val success = state as HostDetailUiState.Success
+                    success.copy(jobsLoading = false, jobSummaries = jobSummaries)
+                }
+            }
         }
     }
 
