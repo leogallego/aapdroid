@@ -37,7 +37,10 @@ data class SerializedInstance(
     val certFingerprint: String? = null,
     val mcpServerUrls: List<McpServerConfig>? = null,
     val mcpEnabled: Boolean = false,
-    val instanceInfo: InstanceInfo? = null
+    val instanceInfo: InstanceInfo? = null,
+    val isSuperuser: Boolean = false,
+    val isSystemAuditor: Boolean = false,
+    val userRoleFetched: Boolean = false
 )
 
 @Serializable
@@ -96,7 +99,10 @@ class TokenManager(
             certFingerprint = serialized.certFingerprint,
             mcpServerUrls = serialized.mcpServerUrls?.map { decryptHeaders(it) },
             mcpEnabled = serialized.mcpEnabled,
-            instanceInfo = serialized.instanceInfo
+            instanceInfo = serialized.instanceInfo,
+            isSuperuser = serialized.isSuperuser,
+            isSystemAuditor = serialized.isSystemAuditor,
+            userRoleFetched = serialized.userRoleFetched
         )
     }
 
@@ -111,7 +117,10 @@ class TokenManager(
             certFingerprint = instance.certFingerprint,
             mcpServerUrls = instance.mcpServerUrls?.map { encryptHeaders(it) },
             mcpEnabled = instance.mcpEnabled,
-            instanceInfo = instance.instanceInfo
+            instanceInfo = instance.instanceInfo,
+            isSuperuser = instance.isSuperuser,
+            isSystemAuditor = instance.isSystemAuditor,
+            userRoleFetched = instance.userRoleFetched
         )
     }
 
@@ -333,6 +342,25 @@ class TokenManager(
                 serialized.copy(
                     mcpEnabled = enabled,
                     mcpServerUrls = servers?.map { encryptHeaders(it) }
+                )
+            } else serialized
+        }
+        writeState(state.copy(instances = updatedInstances))
+    }
+
+    override suspend fun updateUserRole(
+        instanceId: String,
+        isSuperuser: Boolean,
+        isSystemAuditor: Boolean
+    ) {
+        val state = readState()
+        if (state.instances.none { it.id == instanceId }) return
+        val updatedInstances = state.instances.map { serialized ->
+            if (serialized.id == instanceId) {
+                serialized.copy(
+                    isSuperuser = isSuperuser,
+                    isSystemAuditor = isSystemAuditor,
+                    userRoleFetched = true
                 )
             } else serialized
         }

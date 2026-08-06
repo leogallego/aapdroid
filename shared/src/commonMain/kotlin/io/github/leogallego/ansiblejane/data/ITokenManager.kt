@@ -48,6 +48,13 @@ interface ITokenManager {
         servers: List<McpServerConfig>?
     )
 
+    /** Persist `/api/v2/me/` RBAC flags for ToolRouter auditor filtering. */
+    suspend fun updateUserRole(
+        instanceId: String,
+        isSuperuser: Boolean,
+        isSystemAuditor: Boolean
+    )
+
     suspend fun clearCredentials()
 
     suspend fun saveLlmApiKey(providerKey: String, apiKey: String)

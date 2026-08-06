@@ -12,13 +12,14 @@ import io.github.leogallego.ansiblejane.assistant.engine.ResponseSource
 import io.github.leogallego.ansiblejane.assistant.engine.Role
 import io.github.leogallego.ansiblejane.assistant.engine.TokenUsage
 import io.github.leogallego.ansiblejane.assistant.engine.ToolExecutor
+import io.github.leogallego.ansiblejane.assistant.engine.AapRole
 import io.github.leogallego.ansiblejane.assistant.engine.ToolRouter
+import io.github.leogallego.ansiblejane.assistant.engine.toAapRole
 import io.github.leogallego.ansiblejane.assistant.llm.GeminiLlmProvider
 import io.github.leogallego.ansiblejane.assistant.llm.KoogLlmProvider
 import io.github.leogallego.ansiblejane.assistant.llm.LlmProvider
 import io.github.leogallego.ansiblejane.assistant.tools.CachedMcpTool
 import io.github.leogallego.ansiblejane.assistant.tools.LocalTool
-import io.github.leogallego.ansiblejane.assistant.tools.local.ListToolsLocalTool
 import io.github.leogallego.ansiblejane.data.ITokenManager
 import io.github.leogallego.ansiblejane.data.IToolManifestRepository
 import io.github.leogallego.ansiblejane.model.ToolManifest
@@ -197,26 +198,24 @@ class AssistantViewModel(
 
             mcpServerManager.refreshConnections()
             val mcpTools = mcpServerManager.mcpTools.value
-            val serverConfigs = tokenManager.activeInstance.value?.mcpServerUrls ?: emptyList()
+            val activeInstance = tokenManager.activeInstance.value
+            val serverConfigs = activeInstance?.mcpServerUrls ?: emptyList()
+            // No instance or role not yet fetched → AUDITOR (fail-closed)
+            val aapRole = activeInstance?.toAapRole() ?: AapRole.AUDITOR
             toolRouter.registerMcpTools(mcpTools)
 
-            Log.d(TAG, "ROUTE: query=\"$text\", ${localTools.size} local, ${mcpTools.size} mcp")
-            val queryResult = toolRouter.getToolsForQuery(text, serverConfigs)
+            Log.d(TAG, "ROUTE: query=\"$text\", ${localTools.size} local, ${mcpTools.size} mcp, role=$aapRole")
+            val queryResult = toolRouter.getToolsForQuery(text, serverConfigs, aapRole)
             val mode = config.tokenSavingMode
             Log.d(TAG, "ROUTE: categoryMatched=${queryResult.categoryMatched}, " +
                 "${queryResult.tools.size} tools selected, mode=$mode")
 
-            val noToolsForCategory = queryResult.categoryMatched && queryResult.tools.isEmpty()
-            val queryWords = text.lowercase().split(Regex("\\W+")).toSet()
-            val isToolDiscoveryQuery = TOOL_DISCOVERY_WORDS.any { it in queryWords }
-            val generalQueryInToolsOnly = !queryResult.categoryMatched &&
-                mode == TokenSavingMode.TOOLS_ONLY && !isToolDiscoveryQuery
-
-            if (noToolsForCategory || generalQueryInToolsOnly) {
-                Log.d(TAG, "ROUTE: no tools path — noToolsForCategory=$noToolsForCategory, " +
-                    "generalQueryInToolsOnly=$generalQueryInToolsOnly")
+            // ToolRouter owns meta-search injection; empty means greetings / no match — do not re-inject
+            if (queryResult.tools.isEmpty()) {
+                val noCategory = !queryResult.categoryMatched
+                Log.d(TAG, "ROUTE: no tools path — categoryMatched=${queryResult.categoryMatched}")
                 val hasMcp = mcpServerManager.mcpTools.value.isNotEmpty()
-                val content = if (generalQueryInToolsOnly) {
+                val content = if (noCategory) {
                     "I can help you query your AAP instance. Try asking about:\n\n" +
                         "- **Inventory** — hosts, groups, inventories\n" +
                         "- **Jobs** — job templates, workflows, schedules\n" +
@@ -255,14 +254,8 @@ class AssistantViewModel(
             }
             val matchedLocal = queryResult.tools.filterIsInstance<LocalTool>()
             val matchedMcp = queryResult.tools.filter { it !is LocalTool }.take(mcpLimit)
-            val budgetedTools = if (matchedLocal.isEmpty() && matchedMcp.isEmpty()) {
-                val listTool = ListToolsLocalTool { toolRouter.getAllRegisteredTools() }
-                listOf(listTool)
-            } else {
-                matchedLocal + matchedMcp
-            }
-            Log.d(TAG, "BUDGET: ${budgetedTools.size} tools [${budgetedTools.map { it.spec.name }}]" +
-                if (matchedLocal.isEmpty() && matchedMcp.isEmpty()) " (fallback: list_tools)" else "")
+            val budgetedTools = matchedLocal + matchedMcp
+            Log.d(TAG, "BUDGET: ${budgetedTools.size} tools [${budgetedTools.map { it.spec.name }}]")
             val toolSpecs = budgetedTools.map { it.spec }
             val toolExecutor = ToolExecutor(budgetedTools)
             val engine = ChatEngine(provider, toolExecutor)
@@ -441,8 +434,5 @@ class AssistantViewModel(
 
     companion object {
         private const val TAG = "AssistantVM"
-        private val TOOL_DISCOVERY_WORDS = setOf(
-            "tools", "tool", "capabilities", "capable", "help", "actions", "functions"
-        )
     }
 }

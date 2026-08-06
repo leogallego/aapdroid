@@ -52,6 +52,13 @@ class ToolRouter(
     private val userDisabled = mutableSetOf<ToolKey>()
     private val userEnabled = mutableSetOf<ToolKey>()
 
+    /** Last role/config from [getToolsForQuery] — used by meta-search so LLM tool calls honor filters. */
+    private data class RoutingContext(
+        val serverConfigs: List<McpServerConfig> = emptyList(),
+        val aapRole: AapRole? = null
+    )
+    private var lastRoutingContext = RoutingContext()
+
     private val initialized = atomic(false)
 
     init {
@@ -294,6 +301,54 @@ class ToolRouter(
             "any", "been"
         )
 
+        private val GREETING_WORDS = setOf(
+            "hi", "hello", "hey", "thanks", "thank", "bye", "goodbye", "ok", "okay", "sure"
+        )
+
+        private val PRONOUN_WORDS = setOf("you", "we", "they", "he", "she", "it", "your", "our")
+
+        private val TOOL_DISCOVERY_WORDS = setOf(
+            "tools", "tool", "capabilities", "capable", "help", "actions", "functions"
+        )
+
+        /** Cap for meta-search results returned into the LLM tool list. */
+        const val MAX_META_SEARCH_RESULTS = 20
+
+        /** Synonym expansion applied to query tokens before stemming (#120 Tier 1). */
+        val SYNONYMS = mapOf(
+            "playbook" to setOf("job", "template"),
+            "playbooks" to setOf("job", "template"),
+            "deploy" to setOf("launch", "run", "execute"),
+            "deployment" to setOf("launch", "job", "run"),
+            "provision" to setOf("launch", "run"),
+            "machine" to setOf("host", "server", "node", "instance"),
+            "machines" to setOf("host", "server", "node", "instance"),
+            "workstation" to setOf("host", "server", "machine"),
+            "workstations" to setOf("host", "server", "machine"),
+            "cred" to setOf("credential", "secret", "key"),
+            "creds" to setOf("credential", "secret", "key"),
+            "execute" to setOf("launch", "run", "job"),
+            "execution" to setOf("job", "run"),
+            "executions" to setOf("job", "run"),
+            "worker" to setOf("instance", "node"),
+            "workers" to setOf("instance", "node"),
+            "secret" to setOf("credential"),
+            "secrets" to setOf("credential"),
+            "vault" to setOf("credential", "secret"),
+            "automation" to setOf("job", "workflow"),
+            "ansible" to setOf("job", "playbook", "template"),
+        )
+
+        /** Stemmed synonym keys so "deploying"/"deployed" expand like "deploy". */
+        private val STEMMED_SYNONYMS: Map<String, Set<String>> by lazy {
+            buildMap {
+                for ((key, values) in SYNONYMS) {
+                    val stemmedKey = stem(key)
+                    put(stemmedKey, get(stemmedKey).orEmpty() + values)
+                }
+            }
+        }
+
         private val TOOLSET_CATEGORY_MAP = mapOf(
             "job_management" to setOf(Category.JOBS),
             "inventory_management" to setOf(Category.INVENTORY),
@@ -312,12 +367,81 @@ class ToolRouter(
         }
 
         fun stem(word: String): String {
-            val result = word
-                .removeSuffix("ies").let { if (it != word) "${it}y" else it }
-                .removeSuffix("es")
-                .removeSuffix("s")
-                .removeSuffix("e")
-            return if (result.length < 2) word else result
+            if (word.length < 2) return word
+            // Keep "setting(s)" intact — stripping -ing/-s yields "set" and false-matches CONFIGURATION
+            if (word == "setting" || word == "settings") return "setting"
+
+            // 1) Plural normalization first so worker/workers and execution/executions share a form
+            // Short EDA tokens ("des"/"ees"): removeSuffix("es") would leave 1 char — keep original
+            var w = when {
+                word.endsWith("ies") && word.length > 4 -> word.dropLast(3) + "y"
+                word.length <= 3 && word.endsWith("es") -> word
+                word.endsWith("es") && word.length > 3 -> word.dropLast(2)
+                word.endsWith("s") && !word.endsWith("ss") && word.length > 2 -> word.dropLast(1)
+                else -> word
+            }
+            if (w.length < 2) return word
+
+            // 2) Morphological suffixes on the singular-ish form
+            w = when {
+                w.endsWith("tion") && w.length > 5 && !isProtectedTionStem(w) ->
+                    w.dropLast(3) // execution → execut
+                w.endsWith("sion") && w.length > 5 ->
+                    w.dropLast(3)
+                w.endsWith("ing") && w.length > 5 ->
+                    undouble(w.dropLast(3))
+                w.endsWith("ed") && w.length > 4 ->
+                    undouble(w.dropLast(2))
+                w.endsWith("er") && w.length > 5 ->
+                    undouble(w.dropLast(2))
+                else -> w
+            }
+
+            // 3) Trailing -e (template → templat, execute → execut)
+            if (w.endsWith("e") && w.length > 2) w = w.dropLast(1)
+
+            return if (w.length < 2) word else w
+        }
+
+        /** Words where -tion is part of the root (station/question), not a verb noun suffix. */
+        private fun isProtectedTionStem(w: String): Boolean =
+            w.endsWith("station") || w.endsWith("question") || w.endsWith("portion") ||
+                w.endsWith("position") || w.endsWith("condition") || w.endsWith("tradition")
+
+        /** Collapse a doubled final consonant (running → runn → run). */
+        private fun undouble(base: String): String {
+            if (base.length < 2) return base
+            val last = base.last()
+            val prev = base[base.lastIndex - 1]
+            return if (last == prev && last !in "aeiou") base.dropLast(1) else base
+        }
+
+        fun expandSynonyms(words: Set<String>): Set<String> {
+            val expanded = words.toMutableSet()
+            for (word in words) {
+                SYNONYMS[word]?.let { expanded.addAll(it) }
+                STEMMED_SYNONYMS[stem(word)]?.let { expanded.addAll(it) }
+            }
+            return expanded
+        }
+
+        fun tokenizeQuery(query: String): Set<String> =
+            query.lowercase().split(Regex("\\W+")).filter { it.isNotEmpty() }.toSet()
+
+        fun stemQueryTokens(queryWords: Set<String>): Set<String> {
+            val expanded = expandSynonyms(queryWords - STOP_WORDS)
+            return expanded.map { stem(it) }.filter { it.isNotEmpty() }.toSet()
+        }
+
+        private fun isTrivialQuery(queryWords: Set<String>): Boolean {
+            val meaningful = queryWords - STOP_WORDS - PRONOUN_WORDS - GREETING_WORDS
+            return meaningful.isEmpty()
+        }
+
+        private fun isToolDiscoveryQuery(queryWords: Set<String>): Boolean {
+            if (TOOL_DISCOVERY_WORDS.any { it in queryWords }) return true
+            // "what can you do?" — discovery intent without explicit "tools"
+            return "what" in queryWords && "do" in queryWords
         }
     }
 
@@ -404,19 +528,21 @@ class ToolRouter(
 
     fun getToolsForQuery(
         query: String,
-        serverConfigs: List<McpServerConfig> = emptyList()
+        serverConfigs: List<McpServerConfig> = emptyList(),
+        /** Default OPERATOR for callers that omit role; pass explicit role from the active instance. Unknown/`null` fail-closes. */
+        aapRole: AapRole? = AapRole.OPERATOR
     ): QueryResult = synchronized(this) {
-        val queryWords = query.lowercase().split(Regex("\\W+")).toSet()
-        val stemmedQuery = (queryWords - STOP_WORDS).map { stem(it) }.toSet()
-        Log.d(TAG, "QUERY: words=$queryWords, stemmed=$stemmedQuery")
+        lastRoutingContext = RoutingContext(serverConfigs, aapRole)
+        val queryWords = tokenizeQuery(query)
+        val stemmedQuery = stemQueryTokens(queryWords)
+        Log.d(TAG, "QUERY: words=$queryWords, stemmed=$stemmedQuery, role=$aapRole")
 
         val matchedCategories = Category.entries.filter { category ->
             category.stemmedKeywords.any { it in stemmedQuery }
         }
 
         if (matchedCategories.isEmpty()) {
-            Log.d(TAG, "QUERY: no categories matched")
-            return@synchronized QueryResult(emptyList(), categoryMatched = false)
+            return@synchronized noCategoryMatchFallback(queryWords, stemmedQuery, serverConfigs, aapRole)
         }
         Log.d(TAG, "QUERY: matched categories=${matchedCategories.map { it.name }}")
 
@@ -429,7 +555,8 @@ class ToolRouter(
 
         val filteredLocal = localTools.filter { tool ->
             tool.spec.name in matchedLocalNames &&
-                isToolEnabled(tool.spec.name, ToolSource.LOCAL)
+                isToolEnabled(tool.spec.name, ToolSource.LOCAL) &&
+                passesRoleFilter(tool, aapRole)
         }
 
         val routedMcp = mutableListOf<Tool>()
@@ -437,6 +564,7 @@ class ToolRouter(
 
         for (tool in mcpTools) {
             if (!isToolEnabled(tool.spec.name, ToolSource.MCP, tool.serverLabel)) continue
+            if (!passesRoleFilter(tool, aapRole)) continue
 
             val passesReadOnly = tool.serverLabel !in readOnlyLabels ||
                 WRITE_ACTIONS.none { action -> tool.spec.name.endsWith(action) }
@@ -468,6 +596,122 @@ class ToolRouter(
         QueryResult(allCherryPicked, categoryMatched = true)
     }
 
+    /**
+     * Search all enabled tools by name + description tokens (meta-search / #120).
+     * Stable: score desc, then name asc.
+     *
+     * When [serverConfigs] is empty and [aapRole] is null, reuses the last
+     * [getToolsForQuery] routing context so auditor / read-only filters apply
+     * to LLM-invoked meta-search.
+     */
+    fun searchAvailableTools(
+        query: String,
+        maxResults: Int = 20,
+        serverConfigs: List<McpServerConfig> = emptyList(),
+        aapRole: AapRole? = null
+    ): List<Tool> = synchronized(this) {
+        val stemmedQuery = stemQueryTokens(tokenizeQuery(query))
+        if (stemmedQuery.isEmpty()) return emptyList()
+        val effectiveConfigs = serverConfigs.ifEmpty { lastRoutingContext.serverConfigs }
+        val effectiveRole = aapRole ?: lastRoutingContext.aapRole
+        val candidates = collectEnabledTools(effectiveConfigs, effectiveRole)
+        return cherryPick(candidates, stemmedQuery, requireOverlap = true).take(maxResults.coerceAtLeast(0))
+    }
+
+    private fun noCategoryMatchFallback(
+        queryWords: Set<String>,
+        stemmedQuery: Set<String>,
+        serverConfigs: List<McpServerConfig>,
+        aapRole: AapRole?
+    ): QueryResult {
+        Log.d(TAG, "QUERY: no categories matched — meta-search fallback")
+
+        if (isTrivialQuery(queryWords) && !isToolDiscoveryQuery(queryWords)) {
+            Log.d(TAG, "QUERY: trivial/greeting — empty tools")
+            return QueryResult(emptyList(), categoryMatched = false)
+        }
+
+        // Discovery intent first — inject a single meta tool; do not bulk-match on "tool"
+        if (isToolDiscoveryQuery(queryWords)) {
+            val meta = findMetaSearchTool(aapRole)
+            if (meta != null) {
+                Log.d(TAG, "META: discovery inject ${meta.spec.name}")
+                return QueryResult(listOf(meta), categoryMatched = false)
+            }
+        }
+
+        if (stemmedQuery.isNotEmpty()) {
+            val searched = cherryPick(
+                collectEnabledTools(serverConfigs, aapRole),
+                stemmedQuery,
+                requireOverlap = true
+            ).take(MAX_META_SEARCH_RESULTS)
+            if (searched.isNotEmpty()) {
+                Log.d(TAG, "META: description/name search hit ${searched.size} tools")
+                return QueryResult(searched, categoryMatched = false)
+            }
+        }
+
+        // Non-discovery miss with leftover tokens — still offer meta-search when available
+        if (stemmedQuery.isNotEmpty()) {
+            val meta = findMetaSearchTool(aapRole)
+            if (meta != null) {
+                Log.d(TAG, "META: injecting ${meta.spec.name}")
+                return QueryResult(listOf(meta), categoryMatched = false)
+            }
+        }
+
+        return QueryResult(emptyList(), categoryMatched = false)
+    }
+
+    /** Prefer search_available_tools; never fall back to unfiltered list_tools for auditors/unknown. */
+    private fun findMetaSearchTool(aapRole: AapRole?): Tool? {
+        val search = localTools.firstOrNull { tool ->
+            tool.spec.name == "search_available_tools" &&
+                isToolEnabled(tool.spec.name, ToolSource.LOCAL)
+        }
+        if (search != null) return search
+        // null role = unknown → fail closed (same as auditor)
+        if (aapRole == null || aapRole == AapRole.AUDITOR) return null
+        return localTools.firstOrNull { tool ->
+            tool.spec.name == "list_tools" &&
+                isToolEnabled(tool.spec.name, ToolSource.LOCAL)
+        }
+    }
+
+    private fun collectEnabledTools(
+        serverConfigs: List<McpServerConfig>,
+        aapRole: AapRole?
+    ): List<Tool> {
+        val readOnlyLabels = serverConfigs
+            .filter { it.readOnly }
+            .map { it.label }
+            .toSet()
+        val enabledLocal = localTools.filter {
+            isToolEnabled(it.spec.name, ToolSource.LOCAL) && passesRoleFilter(it, aapRole)
+        }
+        val enabledMcp = mcpTools.filter { tool ->
+            isToolEnabled(tool.spec.name, ToolSource.MCP, tool.serverLabel) &&
+                passesRoleFilter(tool, aapRole) &&
+                (tool.serverLabel !in readOnlyLabels ||
+                    WRITE_ACTIONS.none { action -> tool.spec.name.endsWith(action) })
+        }
+        return enabledLocal + enabledMcp
+    }
+
+    /**
+     * Fail-closed: [AapRole.AUDITOR] and unknown (`null`) hide destructive / write-suffix tools.
+     * [AapRole.ADMIN] and [AapRole.OPERATOR] see the full enabled set.
+     */
+    private fun passesRoleFilter(tool: Tool, aapRole: AapRole?): Boolean {
+        when (aapRole) {
+            AapRole.ADMIN, AapRole.OPERATOR -> return true
+            AapRole.AUDITOR, null -> Unit
+        }
+        if (tool.isDestructive) return false
+        return WRITE_ACTIONS.none { action -> tool.spec.name.endsWith(action) }
+    }
+
     private data class ScoredTool(val tool: Tool, val score: Int, val overlap: Int)
 
     private fun cherryPick(
@@ -479,9 +723,18 @@ class ToolRouter(
             val nameParts = tool.spec.name
                 .split(".", "_")
                 .map { stem(it) }
+                .filter { it.isNotEmpty() }
                 .toSet()
-            val overlap = (nameParts intersect stemmedQuery).size
-            var score = overlap * 10
+            val descParts = tool.spec.description.lowercase()
+                .split(Regex("\\W+"))
+                .filter { it.isNotEmpty() && it !in STOP_WORDS }
+                .map { stem(it) }
+                .filter { it.isNotEmpty() }
+                .toSet()
+            val nameOverlap = (nameParts intersect stemmedQuery).size
+            val descOverlap = (descParts intersect stemmedQuery).size
+            val overlap = nameOverlap + descOverlap
+            var score = nameOverlap * 10 + descOverlap * 3
             if (tool.spec.name.contains("list") || tool.spec.name.contains("ping")) score += 3
             if (tool.spec.name.contains("get") || tool.spec.name.contains("read") || tool.spec.name.contains("retrieve")) score += 1
             if (overlap > 0 && tool.isDestructive) score -= 5
@@ -490,7 +743,8 @@ class ToolRouter(
         Log.d(TAG, "SCORES: ${scored.map { "${it.tool.spec.name}=${it.score}" }}")
         return scored
             .filter { it.score > 0 && (!requireOverlap || it.overlap > 0) }
-            .sortedByDescending { it.score }
+            // #439: secondary sort by name for stable KV-cache-friendly ordering
+            .sortedWith(compareByDescending<ScoredTool> { it.score }.thenBy { it.tool.spec.name })
             .map { it.tool }
     }
 
@@ -498,6 +752,31 @@ class ToolRouter(
         val result = mutableListOf<Pair<Tool, ToolSource>>()
         localTools.forEach { result.add(it to ToolSource.LOCAL) }
         mcpTools.forEach { result.add(it to ToolSource.MCP) }
+        result
+    }
+
+    /**
+     * Like [getAllRegisteredTools] but applies a role filter so
+     * [ListToolsLocalTool] does not disclose write tools to auditors.
+     *
+     * Prefer an explicit [aapRole] from the active instance; falls back to the
+     * last [getToolsForQuery] context. Unknown/`null` fail-closes like auditor.
+     */
+    fun getRoutableTools(aapRole: AapRole? = null): List<Pair<Tool, ToolSource>> = synchronized(this) {
+        val role = aapRole ?: lastRoutingContext.aapRole
+        val result = mutableListOf<Pair<Tool, ToolSource>>()
+        localTools.forEach { tool ->
+            if (isToolEnabled(tool.spec.name, ToolSource.LOCAL) && passesRoleFilter(tool, role)) {
+                result.add(tool to ToolSource.LOCAL)
+            }
+        }
+        mcpTools.forEach { tool ->
+            if (isToolEnabled(tool.spec.name, ToolSource.MCP, tool.serverLabel) &&
+                passesRoleFilter(tool, role)
+            ) {
+                result.add(tool to ToolSource.MCP)
+            }
+        }
         result
     }
 
