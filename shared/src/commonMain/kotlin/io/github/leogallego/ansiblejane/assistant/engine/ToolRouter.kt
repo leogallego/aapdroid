@@ -311,6 +311,9 @@ class ToolRouter(
             "tools", "tool", "capabilities", "capable", "help", "actions", "functions"
         )
 
+        /** Cap for meta-search results returned into the LLM tool list. */
+        const val MAX_META_SEARCH_RESULTS = 20
+
         /** Synonym expansion applied to query tokens before stemming (#120 Tier 1). */
         val SYNONYMS = mapOf(
             "playbook" to setOf("job", "template"),
@@ -336,6 +339,16 @@ class ToolRouter(
             "ansible" to setOf("job", "playbook", "template"),
         )
 
+        /** Stemmed synonym keys so "deploying"/"deployed" expand like "deploy". */
+        private val STEMMED_SYNONYMS: Map<String, Set<String>> by lazy {
+            buildMap {
+                for ((key, values) in SYNONYMS) {
+                    val stemmedKey = stem(key)
+                    put(stemmedKey, get(stemmedKey).orEmpty() + values)
+                }
+            }
+        }
+
         private val TOOLSET_CATEGORY_MAP = mapOf(
             "job_management" to setOf(Category.JOBS),
             "inventory_management" to setOf(Category.INVENTORY),
@@ -354,44 +367,46 @@ class ToolRouter(
         }
 
         fun stem(word: String): String {
-            var w = word
+            if (word.length < 2) return word
+            // Keep "setting(s)" intact — stripping -ing/-s yields "set" and false-matches CONFIGURATION
+            if (word == "setting" || word == "settings") return "setting"
 
-            // Longer morphological suffixes first (Tier 1 #120)
+            // 1) Plural normalization first so worker/workers and execution/executions share a form
+            // Short EDA tokens ("des"/"ees"): removeSuffix("es") would leave 1 char — keep original
+            var w = when {
+                word.endsWith("ies") && word.length > 4 -> word.dropLast(3) + "y"
+                word.length <= 3 && word.endsWith("es") -> word
+                word.endsWith("es") && word.length > 3 -> word.dropLast(2)
+                word.endsWith("s") && !word.endsWith("ss") && word.length > 2 -> word.dropLast(1)
+                else -> word
+            }
+            if (w.length < 2) return word
+
+            // 2) Morphological suffixes on the singular-ish form
             w = when {
-                w.endsWith("ies") && w.length > 4 ->
-                    w.dropLast(3) + "y"
-                w.endsWith("tion") && w.length > 5 ->
+                w.endsWith("tion") && w.length > 5 && !isProtectedTionStem(w) ->
                     w.dropLast(3) // execution → execut
                 w.endsWith("sion") && w.length > 5 ->
                     w.dropLast(3)
-                // Keep "setting" intact — stripping -ing yields "set" and false-matches CONFIGURATION
-                w == "setting" -> w
                 w.endsWith("ing") && w.length > 5 ->
                     undouble(w.dropLast(3))
                 w.endsWith("ed") && w.length > 4 ->
                     undouble(w.dropLast(2))
                 w.endsWith("er") && w.length > 5 ->
                     undouble(w.dropLast(2))
-                else -> {
-                    // Legacy plural chain: -ies/-es/-s then trailing -e
-                    val beforeIes = w
-                    w = w.removeSuffix("ies").let { if (it != beforeIes) "${it}y" else it }
-                    w = w.removeSuffix("es")
-                    w = w.removeSuffix("s")
-                    w = w.removeSuffix("e")
-                    w
-                }
+                else -> w
             }
 
-            // Plural strip may leave -tion (executions → execution → execut)
-            if (w.endsWith("tion") && w.length > 5) w = w.dropLast(3)
-            else if (w.endsWith("sion") && w.length > 5) w = w.dropLast(3)
-
-            // Trailing -e after morphological strip (execute → execut)
+            // 3) Trailing -e (template → templat, execute → execut)
             if (w.endsWith("e") && w.length > 2) w = w.dropLast(1)
 
             return if (w.length < 2) word else w
         }
+
+        /** Words where -tion is part of the root (station/question), not a verb noun suffix. */
+        private fun isProtectedTionStem(w: String): Boolean =
+            w.endsWith("station") || w.endsWith("question") || w.endsWith("portion") ||
+                w.endsWith("position") || w.endsWith("condition") || w.endsWith("tradition")
 
         /** Collapse a doubled final consonant (running → runn → run). */
         private fun undouble(base: String): String {
@@ -405,6 +420,7 @@ class ToolRouter(
             val expanded = words.toMutableSet()
             for (word in words) {
                 SYNONYMS[word]?.let { expanded.addAll(it) }
+                STEMMED_SYNONYMS[stem(word)]?.let { expanded.addAll(it) }
             }
             return expanded
         }
@@ -614,26 +630,30 @@ class ToolRouter(
             return QueryResult(emptyList(), categoryMatched = false)
         }
 
+        // Discovery intent first — inject a single meta tool; do not bulk-match on "tool"
+        if (isToolDiscoveryQuery(queryWords)) {
+            val meta = findMetaSearchTool(aapRole)
+            if (meta != null) {
+                Log.d(TAG, "META: discovery inject ${meta.spec.name}")
+                return QueryResult(listOf(meta), categoryMatched = false)
+            }
+        }
+
         if (stemmedQuery.isNotEmpty()) {
             val searched = cherryPick(
                 collectEnabledTools(serverConfigs, aapRole),
                 stemmedQuery,
                 requireOverlap = true
-            )
+            ).take(MAX_META_SEARCH_RESULTS)
             if (searched.isNotEmpty()) {
                 Log.d(TAG, "META: description/name search hit ${searched.size} tools")
                 return QueryResult(searched, categoryMatched = false)
             }
         }
 
-        if (isToolDiscoveryQuery(queryWords) || stemmedQuery.isNotEmpty()) {
-            val meta = localTools.firstOrNull { tool ->
-                tool.spec.name == "search_available_tools" &&
-                    isToolEnabled(tool.spec.name, ToolSource.LOCAL)
-            } ?: localTools.firstOrNull { tool ->
-                tool.spec.name == "list_tools" &&
-                    isToolEnabled(tool.spec.name, ToolSource.LOCAL)
-            }
+        // Non-discovery miss with leftover tokens — still offer meta-search when available
+        if (stemmedQuery.isNotEmpty()) {
+            val meta = findMetaSearchTool(aapRole)
             if (meta != null) {
                 Log.d(TAG, "META: injecting ${meta.spec.name}")
                 return QueryResult(listOf(meta), categoryMatched = false)
@@ -641,6 +661,20 @@ class ToolRouter(
         }
 
         return QueryResult(emptyList(), categoryMatched = false)
+    }
+
+    /** Prefer search_available_tools; never fall back to unfiltered list_tools for auditors. */
+    private fun findMetaSearchTool(aapRole: AapRole?): Tool? {
+        val search = localTools.firstOrNull { tool ->
+            tool.spec.name == "search_available_tools" &&
+                isToolEnabled(tool.spec.name, ToolSource.LOCAL)
+        }
+        if (search != null) return search
+        if (aapRole == AapRole.AUDITOR) return null
+        return localTools.firstOrNull { tool ->
+            tool.spec.name == "list_tools" &&
+                isToolEnabled(tool.spec.name, ToolSource.LOCAL)
+        }
     }
 
     private fun collectEnabledTools(
@@ -694,7 +728,7 @@ class ToolRouter(
             var score = nameOverlap * 10 + descOverlap * 3
             if (tool.spec.name.contains("list") || tool.spec.name.contains("ping")) score += 3
             if (tool.spec.name.contains("get") || tool.spec.name.contains("read") || tool.spec.name.contains("retrieve")) score += 1
-            if (nameOverlap > 0 && tool.isDestructive) score -= 5
+            if (overlap > 0 && tool.isDestructive) score -= 5
             ScoredTool(tool, score, overlap)
         }
         Log.d(TAG, "SCORES: ${scored.map { "${it.tool.spec.name}=${it.score}" }}")
@@ -709,6 +743,28 @@ class ToolRouter(
         val result = mutableListOf<Pair<Tool, ToolSource>>()
         localTools.forEach { result.add(it to ToolSource.LOCAL) }
         mcpTools.forEach { result.add(it to ToolSource.MCP) }
+        result
+    }
+
+    /**
+     * Like [getAllRegisteredTools] but applies the last routing role filter so
+     * [ListToolsLocalTool] does not disclose write tools to auditors.
+     */
+    fun getRoutableTools(): List<Pair<Tool, ToolSource>> = synchronized(this) {
+        val role = lastRoutingContext.aapRole
+        val result = mutableListOf<Pair<Tool, ToolSource>>()
+        localTools.forEach { tool ->
+            if (isToolEnabled(tool.spec.name, ToolSource.LOCAL) && passesRoleFilter(tool, role)) {
+                result.add(tool to ToolSource.LOCAL)
+            }
+        }
+        mcpTools.forEach { tool ->
+            if (isToolEnabled(tool.spec.name, ToolSource.MCP, tool.serverLabel) &&
+                passesRoleFilter(tool, role)
+            ) {
+                result.add(tool to ToolSource.MCP)
+            }
+        }
         result
     }
 
