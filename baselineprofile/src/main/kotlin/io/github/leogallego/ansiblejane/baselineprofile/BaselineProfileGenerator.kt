@@ -5,6 +5,8 @@ import androidx.benchmark.macro.junit4.BaselineProfileRule
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.filters.LargeTest
 import androidx.test.uiautomator.By
+import androidx.test.uiautomator.BySelector
+import androidx.test.uiautomator.UiObject2
 import androidx.test.uiautomator.Until
 import org.junit.Rule
 import org.junit.Test
@@ -46,38 +48,51 @@ class BaselineProfileGenerator {
     }
 
     private fun MacrobenchmarkScope.navigateMainJourneys() {
-        // Dashboard (default tab)
-        device.wait(Until.hasObject(res(TAG_NAV_DASHBOARD)), UI_TIMEOUT_MS)
+        // Dashboard (default tab) — already visible when we enter this path
+        waitAndFind(TAG_NAV_DASHBOARD)
         device.waitForIdle()
 
         // Templates
-        device.findObject(res(TAG_NAV_TEMPLATES))?.click()
+        click(TAG_NAV_TEMPLATES)
         device.waitForIdle()
 
         // Chat (Jane AI)
-        device.findObject(res(TAG_NAV_ASSISTANT))?.click()
+        click(TAG_NAV_ASSISTANT)
         device.waitForIdle()
 
         // Settings (top-bar action, not a bottom nav tab)
-        device.findObject(res(TAG_BUTTON_SETTINGS))?.click()
+        click(TAG_BUTTON_SETTINGS)
         device.waitForIdle()
         device.pressBack()
         device.waitForIdle()
 
         // Return to Dashboard
-        device.findObject(res(TAG_NAV_DASHBOARD))?.click()
+        click(TAG_NAV_DASHBOARD)
         device.waitForIdle()
     }
 
     private fun MacrobenchmarkScope.exerciseAuthScreen() {
-        device.wait(Until.hasObject(res(TAG_FIELD_URL)), UI_TIMEOUT_MS)
-        device.findObject(res(TAG_FIELD_URL))?.click()
-        device.findObject(res(TAG_FIELD_TOKEN))?.click()
+        click(TAG_FIELD_URL)
+        click(TAG_FIELD_TOKEN)
         device.waitForIdle()
     }
 
     /** Match Compose testTag resource-ids set via testTagsAsResourceId (bare tag, no package). */
-    private fun res(tag: String) = By.res(tag)
+    private fun res(tag: String): BySelector = By.res(tag)
+
+    private fun MacrobenchmarkScope.waitAndFind(tag: String): UiObject2 {
+        val selector = res(tag)
+        check(device.wait(Until.hasObject(selector), UI_TIMEOUT_MS)) {
+            "Timed out waiting for testTag/resource-id '$tag' (${UI_TIMEOUT_MS}ms)"
+        }
+        return checkNotNull(device.findObject(selector)) {
+            "testTag/resource-id '$tag' vanished after wait"
+        }
+    }
+
+    private fun MacrobenchmarkScope.click(tag: String) {
+        waitAndFind(tag).click()
+    }
 
     companion object {
         private const val PACKAGE_NAME = "io.github.leogallego.ansiblejane"
