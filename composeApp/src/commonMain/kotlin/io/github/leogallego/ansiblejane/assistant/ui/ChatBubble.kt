@@ -4,19 +4,25 @@ import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.isSystemInDarkTheme
+import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
+import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.selection.SelectionContainer
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ContentCopy
+import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.Refresh
+import androidx.compose.material.icons.filled.Visibility
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.HorizontalDivider
@@ -42,6 +48,7 @@ import androidx.compose.ui.unit.dp
 import io.github.leogallego.ansiblejane.assistant.engine.ChatMessage
 import io.github.leogallego.ansiblejane.assistant.engine.ResponseSource
 import io.github.leogallego.ansiblejane.assistant.engine.TokenUsage
+import io.github.leogallego.ansiblejane.assistant.engine.ToolUsage
 import com.mikepenz.markdown.compose.LocalBulletListHandler
 import com.mikepenz.markdown.compose.Markdown
 import com.mikepenz.markdown.compose.components.markdownComponents
@@ -104,7 +111,7 @@ fun UserBubble(
 fun AssistantMessage(
     content: String,
     source: ResponseSource? = null,
-    toolsUsed: List<String> = emptyList(),
+    toolsUsed: List<ToolUsage> = emptyList(),
     tokenUsage: TokenUsage? = null,
     onCopy: (() -> Unit)? = null,
     onRegenerate: (() -> Unit)? = null,
@@ -228,10 +235,11 @@ fun AssistantMessage(
     }
 }
 
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
 private fun SourceBand(
     source: ResponseSource,
-    toolsUsed: List<String>,
+    toolsUsed: List<ToolUsage>,
     tokenUsage: TokenUsage? = null,
     modifier: Modifier = Modifier
 ) {
@@ -253,33 +261,14 @@ private fun SourceBand(
                 style = MaterialTheme.typography.labelSmall,
                 color = color,
             )
-            if (toolsUsed.isNotEmpty()) {
-                Spacer(Modifier.width(6.dp))
-                Text(
-                    text = "·",
-                    style = MaterialTheme.typography.labelSmall,
-                    color = color,
-                )
-                Spacer(Modifier.width(6.dp))
-                Text(
-                    text = toolsUsed.joinToString(", "),
-                    style = MaterialTheme.typography.labelSmall.copy(
-                        fontFamily = FontFamily.Monospace
-                    ),
-                    color = color,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
-                    modifier = Modifier.weight(1f, fill = false),
-                )
-            }
             if (tokenUsage != null) {
-                Spacer(Modifier.width(6.dp))
+                Spacer(modifier.width(6.dp))
                 Text(
                     text = "·",
                     style = MaterialTheme.typography.labelSmall,
                     color = color,
                 )
-                Spacer(Modifier.width(6.dp))
+                Spacer(modifier.width(6.dp))
                 Text(
                     text = stringResource(Res.string.provider_tokens, tokenUsage.formatTotal()),
                     style = MaterialTheme.typography.labelSmall,
@@ -290,11 +279,82 @@ private fun SourceBand(
                 )
             }
         }
+        if (toolsUsed.isNotEmpty()) {
+            FlowRow(
+                horizontalArrangement = Arrangement.spacedBy(6.dp),
+                verticalArrangement = Arrangement.spacedBy(4.dp),
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(top = 6.dp),
+            ) {
+                toolsUsed.forEach { tool ->
+                    ToolCallIndicator(tool = tool)
+                }
+            }
+        }
         HorizontalDivider(
             color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.3f),
             thickness = 0.5.dp,
             modifier = Modifier.padding(top = 4.dp),
         )
+    }
+}
+
+/**
+ * Visual read vs write/action indicator for a tool invoked in chat.
+ * Purely presentational — confirmation gating stays on Tool.isDestructive in the engine.
+ */
+@Composable
+fun ToolCallIndicator(
+    tool: ToolUsage,
+    modifier: Modifier = Modifier,
+) {
+    val isWrite = tool.isDestructive
+    val icon = if (isWrite) Icons.Default.Edit else Icons.Default.Visibility
+    val tint = if (isWrite) {
+        MaterialTheme.colorScheme.tertiary
+    } else {
+        MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f)
+    }
+    val label = if (isWrite) {
+        stringResource(Res.string.cd_tool_write, tool.name)
+    } else {
+        stringResource(Res.string.cd_tool_read, tool.name)
+    }
+    val tag = if (isWrite) "badge_tool_write" else "badge_tool_read"
+
+    Surface(
+        shape = RoundedCornerShape(8.dp),
+        color = if (isWrite) {
+            MaterialTheme.colorScheme.tertiaryContainer.copy(alpha = 0.55f)
+        } else {
+            MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.55f)
+        },
+        modifier = modifier
+            .testTag(tag)
+            .semantics { contentDescription = label },
+    ) {
+        Row(
+            verticalAlignment = Alignment.CenterVertically,
+            modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
+        ) {
+            Icon(
+                imageVector = icon,
+                contentDescription = null,
+                tint = tint,
+                modifier = Modifier.size(12.dp),
+            )
+            Spacer(modifier.width(4.dp))
+            Text(
+                text = tool.name,
+                style = MaterialTheme.typography.labelSmall.copy(
+                    fontFamily = FontFamily.Monospace
+                ),
+                color = tint,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
+        }
     }
 }
 

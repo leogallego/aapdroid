@@ -15,6 +15,7 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.HourglassTop
+import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
@@ -35,6 +36,8 @@ import androidx.compose.ui.unit.dp
 import io.github.leogallego.ansiblejane.model.WorkflowApproval
 import io.github.leogallego.ansiblejane.presentation.notifications.NotificationsUiState
 import io.github.leogallego.ansiblejane.ui.components.DateFormatter
+import io.github.leogallego.ansiblejane.ui.components.SwipeAction
+import io.github.leogallego.ansiblejane.ui.components.SwipeActionBox
 import org.jetbrains.compose.resources.stringResource
 import aapremotecontrol.composeapp.generated.resources.*
 
@@ -45,6 +48,7 @@ fun NotificationsSheet(
     onDismiss: () -> Unit,
     onRefresh: () -> Unit,
     onApprovalClick: (Int) -> Unit,
+    onDismissApproval: (Int) -> Unit = {},
 ) {
     val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
 
@@ -137,10 +141,22 @@ fun NotificationsSheet(
                     Spacer(modifier = Modifier.height(8.dp))
                     LazyColumn {
                         items(uiState.approvals, key = { it.id }) { approval ->
-                            ApprovalNotificationItem(
-                                approval = approval,
-                                onClick = { onApprovalClick(approval.id) }
-                            )
+                            SwipeActionBox(
+                                endToStart = SwipeAction(
+                                    icon = Icons.Default.Delete,
+                                    label = stringResource(Res.string.swipe_dismiss),
+                                    containerColor = MaterialTheme.colorScheme.errorContainer,
+                                    contentColor = MaterialTheme.colorScheme.onErrorContainer,
+                                    onAction = { onDismissApproval(approval.id) },
+                                    removesItem = true,
+                                ),
+                                testTag = "swipe_notification_${approval.id}",
+                            ) {
+                                ApprovalNotificationItem(
+                                    approval = approval,
+                                    onClick = { onApprovalClick(approval.id) }
+                                )
+                            }
                         }
                     }
                 }

@@ -27,20 +27,37 @@ class NotificationsViewModel(
     private val _uiState = MutableStateFlow(NotificationsUiState())
     val uiState: StateFlow<NotificationsUiState> = _uiState.asStateFlow()
 
+    /** Session-local hide set so refresh cannot resurrect a swiped-away row. */
+    private val dismissedIds = mutableSetOf<Int>()
+
     private var refreshJob: Job? = null
     private var lastFetchTime: Long = 0L
 
     init {
-        refresh()
+        refresh(clearSessionDismissals = false)
     }
 
     fun refreshIfStale(maxAgeMs: Long = 30_000L) {
         if (kotlin.time.Clock.System.now().toEpochMilliseconds() - lastFetchTime > maxAgeMs) {
-            refresh()
+            refresh(clearSessionDismissals = false)
         }
     }
 
-    fun refresh() {
+    /**
+     * Hide an approval from the sheet for this ViewModel session.
+     * Survives stale/background refresh; an explicit [refresh] clears the hide set.
+     */
+    fun dismissApproval(approvalId: Int) {
+        dismissedIds += approvalId
+        _uiState.update { state ->
+            state.copy(approvals = state.approvals.filterNot { it.id in dismissedIds })
+        }
+    }
+
+    fun refresh(clearSessionDismissals: Boolean = true) {
+        if (clearSessionDismissals) {
+            dismissedIds.clear()
+        }
         val oldJob = refreshJob
         refreshJob = viewModelScope.launch {
             oldJob?.cancelAndJoin()
@@ -50,7 +67,7 @@ class NotificationsViewModel(
                     lastFetchTime = kotlin.time.Clock.System.now().toEpochMilliseconds()
                     _uiState.update {
                         NotificationsUiState(
-                            approvals = result.approvals,
+                            approvals = result.approvals.filterNot { it.id in dismissedIds },
                             isLoading = false,
                         )
                     }

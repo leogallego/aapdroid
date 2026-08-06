@@ -17,7 +17,6 @@ import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
-import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.getValue
@@ -33,6 +32,7 @@ import io.github.leogallego.ansiblejane.ui.components.DateFormatter
 import io.github.leogallego.ansiblejane.ui.components.DetailRowHorizontal
 import io.github.leogallego.ansiblejane.ui.components.DetailScaffold
 import io.github.leogallego.ansiblejane.ui.components.ErrorMessage
+import io.github.leogallego.ansiblejane.ui.components.AnsiText
 import io.github.leogallego.ansiblejane.ui.components.JobStatusBadge
 import org.jetbrains.compose.resources.stringResource
 import aapremotecontrol.composeapp.generated.resources.*
@@ -144,11 +144,8 @@ private fun JobDetailContent(job: Job, isActive: Boolean, stdout: String? = null
                         shape = MaterialTheme.shapes.small,
                         modifier = Modifier.fillMaxWidth()
                     ) {
-                        Text(
+                        AnsiText(
                             text = stdout,
-                            style = MaterialTheme.typography.bodySmall.copy(
-                                fontFamily = FontFamily.Monospace
-                            ),
                             modifier = Modifier
                                 .padding(12.dp)
                                 .horizontalScroll(rememberScrollState())

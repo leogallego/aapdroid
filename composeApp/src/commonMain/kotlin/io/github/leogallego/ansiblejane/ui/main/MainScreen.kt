@@ -321,7 +321,10 @@ fun MainScreen(
             onApprovalClick = { approvalId ->
                 showNotificationsSheet = false
                 onNavigateToApproval(approvalId)
-            }
+            },
+            onDismissApproval = { approvalId ->
+                notificationsViewModel.dismissApproval(approvalId)
+            },
         )
     }
 }

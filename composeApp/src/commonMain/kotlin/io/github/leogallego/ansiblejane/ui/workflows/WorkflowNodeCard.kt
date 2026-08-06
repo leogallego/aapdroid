@@ -25,12 +25,12 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import io.github.leogallego.ansiblejane.presentation.workflows.NodeStdoutState
 import org.jetbrains.compose.resources.stringResource
 import aapremotecontrol.composeapp.generated.resources.*
+import io.github.leogallego.ansiblejane.ui.components.AnsiText
 import io.github.leogallego.ansiblejane.ui.components.JobStatusBadge
 
 @Composable
@@ -125,11 +125,8 @@ fun WorkflowNodeCard(
                                 .fillMaxWidth()
                                 .padding(horizontal = 16.dp, vertical = 4.dp)
                         ) {
-                            Text(
+                            AnsiText(
                                 text = stdoutState.stdout,
-                                style = MaterialTheme.typography.bodySmall.copy(
-                                    fontFamily = FontFamily.Monospace
-                                ),
                                 modifier = Modifier
                                     .padding(12.dp)
                                     .horizontalScroll(rememberScrollState())
