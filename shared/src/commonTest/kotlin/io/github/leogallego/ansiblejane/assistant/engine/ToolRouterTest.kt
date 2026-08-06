@@ -827,6 +827,34 @@ class ToolRouterTest {
         assertEquals("inventory", ToolRouter.stem("inventories"))
     }
 
+    @Test
+    fun `stem SHOULD strip ing ed er and tion suffixes`() {
+        assertEquals("run", ToolRouter.stem("running"))
+        assertEquals("monitor", ToolRouter.stem("monitoring"))
+        assertEquals("fail", ToolRouter.stem("failed"))
+        assertEquals("launch", ToolRouter.stem("launched"))
+        assertEquals("launch", ToolRouter.stem("launcher"))
+        assertEquals("execut", ToolRouter.stem("execution"))
+        assertEquals("execut", ToolRouter.stem("executions"))
+        assertEquals("execut", ToolRouter.stem("execute"))
+    }
+
+    @Test
+    fun `SHOULD match JOBS WHEN query uses launcher stemmed to launch`() {
+        val tools = listOf(
+            localTool("launch_job", destructive = true),
+            localTool("list_job_templates"),
+            localTool("list_hosts")
+        )
+        router.registerLocalTools(tools)
+
+        val result = router.getToolsForQuery("use the launcher").tools
+        val names = result.map { it.spec.name }
+
+        assertTrue("launch_job" in names || "list_job_templates" in names)
+        assertFalse("list_hosts" in names)
+    }
+
     // --- New keyword tests ---
 
     @Test

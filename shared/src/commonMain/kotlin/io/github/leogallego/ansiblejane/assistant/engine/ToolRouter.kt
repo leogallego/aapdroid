@@ -312,12 +312,49 @@ class ToolRouter(
         }
 
         fun stem(word: String): String {
-            val result = word
-                .removeSuffix("ies").let { if (it != word) "${it}y" else it }
-                .removeSuffix("es")
-                .removeSuffix("s")
-                .removeSuffix("e")
-            return if (result.length < 2) word else result
+            var w = word
+
+            // Longer morphological suffixes first (Tier 1 #120)
+            w = when {
+                w.endsWith("ies") && w.length > 4 ->
+                    w.dropLast(3) + "y"
+                w.endsWith("tion") && w.length > 5 ->
+                    w.dropLast(3) // execution → execut
+                w.endsWith("sion") && w.length > 5 ->
+                    w.dropLast(3)
+                w.endsWith("ing") && w.length > 5 ->
+                    undouble(w.dropLast(3))
+                w.endsWith("ed") && w.length > 4 ->
+                    undouble(w.dropLast(2))
+                w.endsWith("er") && w.length > 5 ->
+                    undouble(w.dropLast(2))
+                else -> {
+                    // Legacy plural chain: -ies/-es/-s then trailing -e
+                    val beforeIes = w
+                    w = w.removeSuffix("ies").let { if (it != beforeIes) "${it}y" else it }
+                    w = w.removeSuffix("es")
+                    w = w.removeSuffix("s")
+                    w = w.removeSuffix("e")
+                    w
+                }
+            }
+
+            // Plural strip may leave -tion (executions → execution → execut)
+            if (w.endsWith("tion") && w.length > 5) w = w.dropLast(3)
+            else if (w.endsWith("sion") && w.length > 5) w = w.dropLast(3)
+
+            // Trailing -e after morphological strip (execute → execut)
+            if (w.endsWith("e") && w.length > 2) w = w.dropLast(1)
+
+            return if (w.length < 2) word else w
+        }
+
+        /** Collapse a doubled final consonant (running → runn → run). */
+        private fun undouble(base: String): String {
+            if (base.length < 2) return base
+            val last = base.last()
+            val prev = base[base.lastIndex - 1]
+            return if (last == prev && last !in "aeiou") base.dropLast(1) else base
         }
     }
 
