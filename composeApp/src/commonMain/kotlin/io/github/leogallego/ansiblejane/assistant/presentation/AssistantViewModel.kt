@@ -19,6 +19,7 @@ import io.github.leogallego.ansiblejane.assistant.llm.LlmProvider
 import io.github.leogallego.ansiblejane.assistant.tools.CachedMcpTool
 import io.github.leogallego.ansiblejane.assistant.tools.LocalTool
 import io.github.leogallego.ansiblejane.assistant.tools.local.ListToolsLocalTool
+import io.github.leogallego.ansiblejane.assistant.tools.local.SearchAvailableToolsLocalTool
 import io.github.leogallego.ansiblejane.data.ITokenManager
 import io.github.leogallego.ansiblejane.data.IToolManifestRepository
 import io.github.leogallego.ansiblejane.model.ToolManifest
@@ -209,8 +210,11 @@ class AssistantViewModel(
             val noToolsForCategory = queryResult.categoryMatched && queryResult.tools.isEmpty()
             val queryWords = text.lowercase().split(Regex("\\W+")).toSet()
             val isToolDiscoveryQuery = TOOL_DISCOVERY_WORDS.any { it in queryWords }
+            // When ToolRouter already returned meta-search / discovery tools, continue to the LLM
             val generalQueryInToolsOnly = !queryResult.categoryMatched &&
-                mode == TokenSavingMode.TOOLS_ONLY && !isToolDiscoveryQuery
+                mode == TokenSavingMode.TOOLS_ONLY &&
+                !isToolDiscoveryQuery &&
+                queryResult.tools.isEmpty()
 
             if (noToolsForCategory || generalQueryInToolsOnly) {
                 Log.d(TAG, "ROUTE: no tools path — noToolsForCategory=$noToolsForCategory, " +
@@ -256,13 +260,13 @@ class AssistantViewModel(
             val matchedLocal = queryResult.tools.filterIsInstance<LocalTool>()
             val matchedMcp = queryResult.tools.filter { it !is LocalTool }.take(mcpLimit)
             val budgetedTools = if (matchedLocal.isEmpty() && matchedMcp.isEmpty()) {
-                val listTool = ListToolsLocalTool { toolRouter.getAllRegisteredTools() }
-                listOf(listTool)
+                val searchTool = SearchAvailableToolsLocalTool { toolRouter }
+                listOf(searchTool)
             } else {
                 matchedLocal + matchedMcp
             }
             Log.d(TAG, "BUDGET: ${budgetedTools.size} tools [${budgetedTools.map { it.spec.name }}]" +
-                if (matchedLocal.isEmpty() && matchedMcp.isEmpty()) " (fallback: list_tools)" else "")
+                if (matchedLocal.isEmpty() && matchedMcp.isEmpty()) " (fallback: search_available_tools)" else "")
             val toolSpecs = budgetedTools.map { it.spec }
             val toolExecutor = ToolExecutor(budgetedTools)
             val engine = ChatEngine(provider, toolExecutor)

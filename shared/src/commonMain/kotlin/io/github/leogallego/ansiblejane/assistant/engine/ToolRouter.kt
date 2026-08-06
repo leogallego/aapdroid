@@ -294,6 +294,41 @@ class ToolRouter(
             "any", "been"
         )
 
+        private val GREETING_WORDS = setOf(
+            "hi", "hello", "hey", "thanks", "thank", "bye", "goodbye", "ok", "okay", "sure"
+        )
+
+        private val PRONOUN_WORDS = setOf("you", "we", "they", "he", "she", "it", "your", "our")
+
+        private val TOOL_DISCOVERY_WORDS = setOf(
+            "tools", "tool", "capabilities", "capable", "help", "actions", "functions"
+        )
+
+        /** Synonym expansion applied to query tokens before stemming (#120 Tier 1). */
+        val SYNONYMS = mapOf(
+            "playbook" to setOf("job", "template"),
+            "playbooks" to setOf("job", "template"),
+            "deploy" to setOf("launch", "run", "execute"),
+            "deployment" to setOf("launch", "job", "run"),
+            "provision" to setOf("launch", "run"),
+            "machine" to setOf("host", "server", "node", "instance"),
+            "machines" to setOf("host", "server", "node", "instance"),
+            "workstation" to setOf("host", "server", "machine"),
+            "workstations" to setOf("host", "server", "machine"),
+            "cred" to setOf("credential", "secret", "key"),
+            "creds" to setOf("credential", "secret", "key"),
+            "execute" to setOf("launch", "run", "job"),
+            "execution" to setOf("job", "run"),
+            "executions" to setOf("job", "run"),
+            "worker" to setOf("instance", "node"),
+            "workers" to setOf("instance", "node"),
+            "secret" to setOf("credential"),
+            "secrets" to setOf("credential"),
+            "vault" to setOf("credential", "secret"),
+            "automation" to setOf("job", "workflow"),
+            "ansible" to setOf("job", "playbook", "template"),
+        )
+
         private val TOOLSET_CATEGORY_MAP = mapOf(
             "job_management" to setOf(Category.JOBS),
             "inventory_management" to setOf(Category.INVENTORY),
@@ -355,6 +390,33 @@ class ToolRouter(
             val last = base.last()
             val prev = base[base.lastIndex - 1]
             return if (last == prev && last !in "aeiou") base.dropLast(1) else base
+        }
+
+        fun expandSynonyms(words: Set<String>): Set<String> {
+            val expanded = words.toMutableSet()
+            for (word in words) {
+                SYNONYMS[word]?.let { expanded.addAll(it) }
+            }
+            return expanded
+        }
+
+        fun tokenizeQuery(query: String): Set<String> =
+            query.lowercase().split(Regex("\\W+")).filter { it.isNotEmpty() }.toSet()
+
+        fun stemQueryTokens(queryWords: Set<String>): Set<String> {
+            val expanded = expandSynonyms(queryWords - STOP_WORDS)
+            return expanded.map { stem(it) }.filter { it.isNotEmpty() }.toSet()
+        }
+
+        private fun isTrivialQuery(queryWords: Set<String>): Boolean {
+            val meaningful = queryWords - STOP_WORDS - PRONOUN_WORDS - GREETING_WORDS
+            return meaningful.isEmpty()
+        }
+
+        private fun isToolDiscoveryQuery(queryWords: Set<String>): Boolean {
+            if (TOOL_DISCOVERY_WORDS.any { it in queryWords }) return true
+            // "what can you do?" — discovery intent without explicit "tools"
+            return "what" in queryWords && "do" in queryWords
         }
     }
 
@@ -441,19 +503,19 @@ class ToolRouter(
 
     fun getToolsForQuery(
         query: String,
-        serverConfigs: List<McpServerConfig> = emptyList()
+        serverConfigs: List<McpServerConfig> = emptyList(),
+        aapRole: AapRole? = null
     ): QueryResult = synchronized(this) {
-        val queryWords = query.lowercase().split(Regex("\\W+")).toSet()
-        val stemmedQuery = (queryWords - STOP_WORDS).map { stem(it) }.toSet()
-        Log.d(TAG, "QUERY: words=$queryWords, stemmed=$stemmedQuery")
+        val queryWords = tokenizeQuery(query)
+        val stemmedQuery = stemQueryTokens(queryWords)
+        Log.d(TAG, "QUERY: words=$queryWords, stemmed=$stemmedQuery, role=$aapRole")
 
         val matchedCategories = Category.entries.filter { category ->
             category.stemmedKeywords.any { it in stemmedQuery }
         }
 
         if (matchedCategories.isEmpty()) {
-            Log.d(TAG, "QUERY: no categories matched")
-            return@synchronized QueryResult(emptyList(), categoryMatched = false)
+            return@synchronized noCategoryMatchFallback(queryWords, stemmedQuery, serverConfigs, aapRole)
         }
         Log.d(TAG, "QUERY: matched categories=${matchedCategories.map { it.name }}")
 
@@ -466,7 +528,8 @@ class ToolRouter(
 
         val filteredLocal = localTools.filter { tool ->
             tool.spec.name in matchedLocalNames &&
-                isToolEnabled(tool.spec.name, ToolSource.LOCAL)
+                isToolEnabled(tool.spec.name, ToolSource.LOCAL) &&
+                passesRoleFilter(tool, aapRole)
         }
 
         val routedMcp = mutableListOf<Tool>()
@@ -474,6 +537,7 @@ class ToolRouter(
 
         for (tool in mcpTools) {
             if (!isToolEnabled(tool.spec.name, ToolSource.MCP, tool.serverLabel)) continue
+            if (!passesRoleFilter(tool, aapRole)) continue
 
             val passesReadOnly = tool.serverLabel !in readOnlyLabels ||
                 WRITE_ACTIONS.none { action -> tool.spec.name.endsWith(action) }
@@ -505,6 +569,90 @@ class ToolRouter(
         QueryResult(allCherryPicked, categoryMatched = true)
     }
 
+    /**
+     * Search all enabled tools by name + description tokens (meta-search / #120).
+     * Stable: score desc, then name asc.
+     */
+    fun searchAvailableTools(
+        query: String,
+        maxResults: Int = 20,
+        serverConfigs: List<McpServerConfig> = emptyList(),
+        aapRole: AapRole? = null
+    ): List<Tool> = synchronized(this) {
+        val stemmedQuery = stemQueryTokens(tokenizeQuery(query))
+        if (stemmedQuery.isEmpty()) return emptyList()
+        val candidates = collectEnabledTools(serverConfigs, aapRole)
+        return cherryPick(candidates, stemmedQuery, requireOverlap = true).take(maxResults.coerceAtLeast(0))
+    }
+
+    private fun noCategoryMatchFallback(
+        queryWords: Set<String>,
+        stemmedQuery: Set<String>,
+        serverConfigs: List<McpServerConfig>,
+        aapRole: AapRole?
+    ): QueryResult {
+        Log.d(TAG, "QUERY: no categories matched — meta-search fallback")
+
+        if (isTrivialQuery(queryWords) && !isToolDiscoveryQuery(queryWords)) {
+            Log.d(TAG, "QUERY: trivial/greeting — empty tools")
+            return QueryResult(emptyList(), categoryMatched = false)
+        }
+
+        if (stemmedQuery.isNotEmpty()) {
+            val searched = cherryPick(
+                collectEnabledTools(serverConfigs, aapRole),
+                stemmedQuery,
+                requireOverlap = true
+            )
+            if (searched.isNotEmpty()) {
+                Log.d(TAG, "META: description/name search hit ${searched.size} tools")
+                return QueryResult(searched, categoryMatched = false)
+            }
+        }
+
+        if (isToolDiscoveryQuery(queryWords) || stemmedQuery.isNotEmpty()) {
+            val meta = localTools.firstOrNull { tool ->
+                tool.spec.name == "search_available_tools" &&
+                    isToolEnabled(tool.spec.name, ToolSource.LOCAL)
+            } ?: localTools.firstOrNull { tool ->
+                tool.spec.name == "list_tools" &&
+                    isToolEnabled(tool.spec.name, ToolSource.LOCAL)
+            }
+            if (meta != null) {
+                Log.d(TAG, "META: injecting ${meta.spec.name}")
+                return QueryResult(listOf(meta), categoryMatched = false)
+            }
+        }
+
+        return QueryResult(emptyList(), categoryMatched = false)
+    }
+
+    private fun collectEnabledTools(
+        serverConfigs: List<McpServerConfig>,
+        aapRole: AapRole?
+    ): List<Tool> {
+        val readOnlyLabels = serverConfigs
+            .filter { it.readOnly }
+            .map { it.label }
+            .toSet()
+        val enabledLocal = localTools.filter {
+            isToolEnabled(it.spec.name, ToolSource.LOCAL) && passesRoleFilter(it, aapRole)
+        }
+        val enabledMcp = mcpTools.filter { tool ->
+            isToolEnabled(tool.spec.name, ToolSource.MCP, tool.serverLabel) &&
+                passesRoleFilter(tool, aapRole) &&
+                (tool.serverLabel !in readOnlyLabels ||
+                    WRITE_ACTIONS.none { action -> tool.spec.name.endsWith(action) })
+        }
+        return enabledLocal + enabledMcp
+    }
+
+    private fun passesRoleFilter(tool: Tool, aapRole: AapRole?): Boolean {
+        if (aapRole != AapRole.AUDITOR) return true
+        if (tool.isDestructive) return false
+        return WRITE_ACTIONS.none { action -> tool.spec.name.endsWith(action) }
+    }
+
     private data class ScoredTool(val tool: Tool, val score: Int, val overlap: Int)
 
     private fun cherryPick(
@@ -516,18 +664,28 @@ class ToolRouter(
             val nameParts = tool.spec.name
                 .split(".", "_")
                 .map { stem(it) }
+                .filter { it.isNotEmpty() }
                 .toSet()
-            val overlap = (nameParts intersect stemmedQuery).size
-            var score = overlap * 10
+            val descParts = tool.spec.description.lowercase()
+                .split(Regex("\\W+"))
+                .filter { it.isNotEmpty() && it !in STOP_WORDS }
+                .map { stem(it) }
+                .filter { it.isNotEmpty() }
+                .toSet()
+            val nameOverlap = (nameParts intersect stemmedQuery).size
+            val descOverlap = (descParts intersect stemmedQuery).size
+            val overlap = nameOverlap + descOverlap
+            var score = nameOverlap * 10 + descOverlap * 3
             if (tool.spec.name.contains("list") || tool.spec.name.contains("ping")) score += 3
             if (tool.spec.name.contains("get") || tool.spec.name.contains("read") || tool.spec.name.contains("retrieve")) score += 1
-            if (overlap > 0 && tool.isDestructive) score -= 5
+            if (nameOverlap > 0 && tool.isDestructive) score -= 5
             ScoredTool(tool, score, overlap)
         }
         Log.d(TAG, "SCORES: ${scored.map { "${it.tool.spec.name}=${it.score}" }}")
         return scored
             .filter { it.score > 0 && (!requireOverlap || it.overlap > 0) }
-            .sortedByDescending { it.score }
+            // #439: secondary sort by name for stable KV-cache-friendly ordering
+            .sortedWith(compareByDescending<ScoredTool> { it.score }.thenBy { it.tool.spec.name })
             .map { it.tool }
     }
 

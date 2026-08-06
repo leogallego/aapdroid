@@ -7,6 +7,7 @@ import io.github.leogallego.ansiblejane.assistant.tools.ToolResult
 import io.github.leogallego.ansiblejane.assistant.tools.ToolSource
 import io.github.leogallego.ansiblejane.assistant.tools.ToolSpec
 import io.github.leogallego.ansiblejane.model.McpServerConfig
+import io.github.leogallego.ansiblejane.model.User
 import kotlinx.serialization.json.JsonObject
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
@@ -52,8 +53,12 @@ class ToolRouterTest {
         ToolStub(name, serverLabel = serverLabel, toolset = toolset,
             description = "[$serverLabel] description of $name")
 
-    private fun localTool(name: String, destructive: Boolean = false) = object : LocalTool {
-        override val spec = ToolSpec(name, "Local: $name", JsonObject(emptyMap()))
+    private fun localTool(
+        name: String,
+        destructive: Boolean = false,
+        description: String = "Local: $name"
+    ) = object : LocalTool {
+        override val spec = ToolSpec(name, description, JsonObject(emptyMap()))
         override val isDestructive = destructive
         override suspend fun execute(args: JsonObject) = ToolResult(success = true)
     }
@@ -122,7 +127,6 @@ class ToolRouterTest {
 
         assertTrue(router.getToolsForQuery("hi").tools.isEmpty())
         assertTrue(router.getToolsForQuery("hello there").tools.isEmpty())
-        assertTrue(router.getToolsForQuery("what can you do?").tools.isEmpty())
         assertTrue(router.getToolsForQuery("thanks").tools.isEmpty())
     }
 
@@ -1591,6 +1595,196 @@ class ToolRouterTest {
         assertTrue(
             notFound.isEmpty(),
             "OVERLAP_MAPPING values not matching verified server tools: $notFound"
+        )
+    }
+
+    // --- Synonym expansion (#120 Tier 1) ---
+
+    @Test
+    fun `SHOULD match JOBS WHEN query uses deploy synonym`() {
+        val tools = listOf(
+            localTool("launch_job", destructive = true),
+            localTool("list_job_templates"),
+            localTool("list_hosts")
+        )
+        router.registerLocalTools(tools)
+
+        val result = router.getToolsForQuery("deploy my application").tools
+        val names = result.map { it.spec.name }
+
+        assertTrue("launch_job" in names || "list_job_templates" in names)
+        assertFalse("list_hosts" in names)
+    }
+
+    @Test
+    fun `SHOULD match INVENTORY WHEN query uses workstation synonym for host`() {
+        val tools = listOf(
+            localTool("list_hosts"),
+            localTool("list_inventories"),
+            localTool("list_jobs")
+        )
+        router.registerLocalTools(tools)
+
+        val result = router.getToolsForQuery("list workstations").tools
+        val names = result.map { it.spec.name }
+
+        assertTrue("list_hosts" in names || "list_inventories" in names)
+        assertFalse("list_jobs" in names)
+    }
+
+    // --- Description-based scoring (#120 Tier 1) ---
+
+    @Test
+    fun `SHOULD rank tool higher WHEN description matches query tokens`() {
+        val withLabel = localTool(
+            "list_job_templates",
+            description = "List job templates with optional search and label filter"
+        )
+        val plain = localTool(
+            "list_workflow_templates",
+            description = "List workflow job templates"
+        )
+        router.registerLocalTools(listOf(withLabel, plain))
+
+        val result = router.getToolsForQuery("filter templates by label").tools
+        val names = result.map { it.spec.name }
+
+        assertTrue(names.isNotEmpty())
+        assertEquals("list_job_templates", names.first())
+    }
+
+    // --- Meta-search / no-match fallback (#120 Tier 1) ---
+
+    @Test
+    fun `SHOULD return search_available_tools WHEN query is tool discovery`() {
+        val search = localTool("search_available_tools", description = "Search available tools")
+        val hosts = localTool("list_hosts")
+        router.registerLocalTools(listOf(search, hosts))
+
+        val result = router.getToolsForQuery("what can you do?")
+        assertFalse(result.categoryMatched)
+        assertEquals(listOf("search_available_tools"), result.tools.map { it.spec.name })
+    }
+
+    @Test
+    fun `SHOULD meta-search by description WHEN no category matches`() {
+        val obscure = localTool(
+            "list_notification_templates",
+            description = "Manage alert smtp destinations and pagerduty channels"
+        )
+        val hosts = localTool("list_hosts", description = "List inventory hosts")
+        router.registerLocalTools(listOf(obscure, hosts))
+
+        // "smtp"/"pagerduty" are not category keywords; description search should still find the tool
+        val result = router.getToolsForQuery("smtp pagerduty destinations")
+        assertFalse(result.categoryMatched)
+        assertTrue(result.tools.any { it.spec.name == "list_notification_templates" })
+        assertFalse(result.tools.any { it.spec.name == "list_hosts" })
+    }
+
+    @Test
+    fun `searchAvailableTools SHOULD score name and description`() {
+        router.registerLocalTools(
+            listOf(
+                localTool("list_hosts", description = "List inventory hosts"),
+                localTool(
+                    "list_job_templates",
+                    description = "List job templates with optional label filter"
+                )
+            )
+        )
+
+        val hits = router.searchAvailableTools("label filter", maxResults = 5)
+        assertTrue(hits.any { it.spec.name == "list_job_templates" })
+        assertEquals("list_job_templates", hits.first().spec.name)
+    }
+
+    // --- Deterministic ordering (#439) ---
+
+    @Test
+    fun `cherryPick SHOULD break score ties by tool name alphabetically`() {
+        // Same name-overlap score for both list_ tools (+3 list boost); name secondary sort
+        val tools = listOf(
+            localTool("list_jobs"),
+            localTool("list_job_templates"),
+            localTool("get_job")
+        )
+        router.registerLocalTools(tools)
+
+        val first = router.getToolsForQuery("show jobs").tools.map { it.spec.name }
+        val second = router.getToolsForQuery("show jobs").tools.map { it.spec.name }
+
+        assertEquals(first, second)
+        // Among equal high-score list_ tools, alphabetical order must be stable
+        val listTools = first.filter { it.startsWith("list_") }
+        assertEquals(listTools.sorted(), listTools)
+    }
+
+    @Test
+    fun `identical tool sets SHOULD produce identical ordering across queries`() {
+        val tools = listOf(
+            localTool("list_hosts"),
+            localTool("list_inventories"),
+            localTool("list_groups"),
+            localTool("get_host_facts")
+        )
+        router.registerLocalTools(tools)
+
+        val a = router.getToolsForQuery("show hosts inventory groups").tools.map { it.spec.name }
+        val b = router.getToolsForQuery("show hosts inventory groups").tools.map { it.spec.name }
+        assertEquals(a, b)
+        assertTrue(a.size >= 2)
+    }
+
+    // --- AAP role filtering (#120 Tier 1) ---
+
+    @Test
+    fun `SHOULD filter destructive tools WHEN aapRole is AUDITOR`() {
+        val tools = listOf(
+            localTool("list_job_templates"),
+            localTool("launch_job", destructive = true),
+            localTool("list_jobs")
+        )
+        router.registerLocalTools(tools)
+
+        val result = router.getToolsForQuery(
+            "launch a job template",
+            aapRole = AapRole.AUDITOR
+        ).tools
+        val names = result.map { it.spec.name }
+
+        assertTrue("list_job_templates" in names || "list_jobs" in names)
+        assertFalse("launch_job" in names)
+    }
+
+    @Test
+    fun `SHOULD keep destructive tools WHEN aapRole is OPERATOR`() {
+        val tools = listOf(
+            localTool("list_job_templates"),
+            localTool("launch_job", destructive = true)
+        )
+        router.registerLocalTools(tools)
+
+        val result = router.getToolsForQuery(
+            "launch a job template",
+            aapRole = AapRole.OPERATOR
+        ).tools
+        assertTrue(result.any { it.spec.name == "launch_job" })
+    }
+
+    @Test
+    fun `User toAapRole SHOULD map system auditor and superuser`() {
+        assertEquals(
+            AapRole.AUDITOR,
+            User(1, "aud", isSystemAuditor = true).toAapRole()
+        )
+        assertEquals(
+            AapRole.ADMIN,
+            User(2, "admin", isSuperuser = true, isSystemAuditor = true).toAapRole()
+        )
+        assertEquals(
+            AapRole.OPERATOR,
+            User(3, "op").toAapRole()
         )
     }
 }
