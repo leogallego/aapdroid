@@ -3,13 +3,13 @@ package io.github.leogallego.ansiblejane.assistant.tools.local
 import ai.koog.agents.core.tools.annotations.LLMDescription
 import ai.koog.serialization.typeToken
 import io.github.leogallego.ansiblejane.assistant.tools.AapLocalTool
-import io.github.leogallego.ansiblejane.data.ControllerReadOnlyRepository
+import io.github.leogallego.ansiblejane.data.IControllerReadOnlyRepository
 import io.github.leogallego.ansiblejane.network.networkJson
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.encodeToString
 
 class GetSurveySpecLocalTool(
-    private val repository: ControllerReadOnlyRepository
+    private val repository: IControllerReadOnlyRepository
 ) : AapLocalTool<GetSurveySpecLocalTool.Args>(
     typeToken<Args>(), Args.serializer(),
     "get_survey_spec", "Get the survey specification for a job template (required variables and prompts)"

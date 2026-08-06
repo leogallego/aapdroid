@@ -36,7 +36,7 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -47,15 +47,16 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import kotlinx.coroutines.launch
-import io.github.leogallego.ansiblejane.data.IHostRepository
 import io.github.leogallego.ansiblejane.model.Host
 import io.github.leogallego.ansiblejane.model.JobHostSummary
+import io.github.leogallego.ansiblejane.presentation.hosts.HostDetailUiState
+import io.github.leogallego.ansiblejane.presentation.hosts.HostDetailViewModel
 import io.github.leogallego.ansiblejane.ui.components.DetailRow
 import io.github.leogallego.ansiblejane.ui.components.DetailSheetHeader
-import kotlinx.serialization.json.JsonElement
 import org.jetbrains.compose.resources.stringResource
 import aapremotecontrol.composeapp.generated.resources.*
-import org.koin.compose.koinInject
+import org.koin.compose.viewmodel.koinViewModel
+import org.koin.core.parameter.parametersOf
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -140,25 +141,16 @@ private fun HostDetailFullScreen(
     host: Host,
     onClose: () -> Unit
 ) {
-    val hostRepository: IHostRepository = koinInject()
-    var facts by remember { mutableStateOf<Map<String, JsonElement>?>(null) }
-    var factsLoading by remember { mutableStateOf(true) }
-    var jobSummaries by remember { mutableStateOf<List<JobHostSummary>>(emptyList()) }
-    var jobsLoading by remember { mutableStateOf(true) }
-
-    LaunchedEffect(host.id) {
-        hostRepository.getHostFacts(host.id).fold(
-            onSuccess = { facts = it },
-            onFailure = { facts = emptyMap() }
-        )
-        factsLoading = false
-
-        hostRepository.getHostJobSummaries(host.id).fold(
-            onSuccess = { jobSummaries = it.summaries },
-            onFailure = { jobSummaries = emptyList() }
-        )
-        jobsLoading = false
-    }
+    val viewModel: HostDetailViewModel = koinViewModel(
+        key = "host-detail-${host.id}",
+        parameters = { parametersOf(host.id) },
+    )
+    val uiState by viewModel.uiState.collectAsState()
+    val content = uiState as? HostDetailUiState.Success ?: HostDetailUiState.Success()
+    val facts = content.facts
+    val factsLoading = content.factsLoading
+    val jobSummaries = content.jobSummaries
+    val jobsLoading = content.jobsLoading
 
     Column(modifier = Modifier.fillMaxSize()) {
         TopAppBar(
@@ -251,7 +243,7 @@ private fun HostDetailFullScreen(
                     }
                 }
             } else {
-                val factEntries = facts?.entries?.toList().orEmpty()
+                val factEntries = facts.entries.toList()
                 if (factEntries.isEmpty()) {
                     item {
                         Text(

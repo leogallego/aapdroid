@@ -5,104 +5,104 @@ import io.github.leogallego.ansiblejane.network.IAapApiProvider
 import kotlinx.serialization.json.JsonElement
 import kotlin.coroutines.cancellation.CancellationException
 
-class ControllerReadOnlyRepository(private val apiProvider: IAapApiProvider) {
+class ControllerReadOnlyRepository(private val apiProvider: IAapApiProvider) : IControllerReadOnlyRepository {
 
-    suspend fun getOrganizations(
-        page: Int = 1,
-        pageSize: Int = 25,
-        search: String? = null
+    override suspend fun getOrganizations(
+        page: Int,
+        pageSize: Int,
+        search: String?
     ): Result<ListResult<Organization>> = runPaginated {
         apiProvider.getApiService().getOrganizations(page, pageSize, search)
     }
 
-    suspend fun getUsers(
-        page: Int = 1,
-        pageSize: Int = 25,
-        search: String? = null
+    override suspend fun getUsers(
+        page: Int,
+        pageSize: Int,
+        search: String?
     ): Result<ListResult<User>> = runPaginated {
         apiProvider.getApiService().getUsers(page, pageSize, search)
     }
 
-    suspend fun getTeams(
-        page: Int = 1,
-        pageSize: Int = 25,
-        search: String? = null
+    override suspend fun getTeams(
+        page: Int,
+        pageSize: Int,
+        search: String?
     ): Result<ListResult<Team>> = runPaginated {
         apiProvider.getApiService().getTeams(page, pageSize, search)
     }
 
-    suspend fun getRoles(
-        page: Int = 1,
-        pageSize: Int = 25,
-        search: String? = null
+    override suspend fun getRoles(
+        page: Int,
+        pageSize: Int,
+        search: String?
     ): Result<ListResult<Role>> = runPaginated {
         apiProvider.getApiService().getRoles(page, pageSize, search)
     }
 
-    suspend fun getRoleDefinitions(
-        page: Int = 1,
-        pageSize: Int = 25,
-        search: String? = null
+    override suspend fun getRoleDefinitions(
+        page: Int,
+        pageSize: Int,
+        search: String?
     ): Result<ListResult<RoleDefinition>> = runPaginated {
         apiProvider.getApiService().getRoleDefinitions(page, pageSize, search)
     }
 
-    suspend fun getGroups(
-        page: Int = 1,
-        pageSize: Int = 25,
-        search: String? = null
+    override suspend fun getGroups(
+        page: Int,
+        pageSize: Int,
+        search: String?
     ): Result<ListResult<Group>> = runPaginated {
         apiProvider.getApiService().getGroups(page, pageSize, search)
     }
 
-    suspend fun getInventorySources(
-        page: Int = 1,
-        pageSize: Int = 25,
-        search: String? = null
+    override suspend fun getInventorySources(
+        page: Int,
+        pageSize: Int,
+        search: String?
     ): Result<ListResult<InventorySource>> = runPaginated {
         apiProvider.getApiService().getInventorySources(page, pageSize, search)
     }
 
-    suspend fun getLabels(
-        page: Int = 1,
-        pageSize: Int = 25,
-        search: String? = null
+    override suspend fun getLabels(
+        page: Int,
+        pageSize: Int,
+        search: String?
     ): Result<ListResult<Label>> = runPaginated {
         apiProvider.getApiService().getLabels(page, pageSize, search)
     }
 
-    suspend fun getCredentialTypes(
-        page: Int = 1,
-        pageSize: Int = 25,
-        search: String? = null
+    override suspend fun getCredentialTypes(
+        page: Int,
+        pageSize: Int,
+        search: String?
     ): Result<ListResult<CredentialType>> = runPaginated {
         apiProvider.getApiService().getCredentialTypes(page, pageSize, search)
     }
 
-    suspend fun getNotificationTemplates(
-        page: Int = 1,
-        pageSize: Int = 25,
-        search: String? = null
+    override suspend fun getNotificationTemplates(
+        page: Int,
+        pageSize: Int,
+        search: String?
     ): Result<ListResult<NotificationTemplate>> = runPaginated {
         apiProvider.getApiService().getNotificationTemplates(page, pageSize, search)
     }
 
-    suspend fun getApplications(
-        page: Int = 1,
-        pageSize: Int = 25,
-        search: String? = null
+    override suspend fun getApplications(
+        page: Int,
+        pageSize: Int,
+        search: String?
     ): Result<ListResult<Application>> = runPaginated {
         apiProvider.getApiService().getApplications(page, pageSize, search)
     }
 
-    suspend fun getTokens(
-        page: Int = 1,
-        pageSize: Int = 25
+    override suspend fun getTokens(
+        page: Int,
+        pageSize: Int
     ): Result<ListResult<AapToken>> = runPaginated {
         apiProvider.getApiService().getTokens(page, pageSize)
     }
 
-    suspend fun getSettings(): Result<JsonElement> = try {
+    override suspend fun getSettings(): Result<JsonElement> = try {
         Result.success(apiProvider.getApiService().getSettings())
     } catch (e: CancellationException) {
         throw e
@@ -110,7 +110,7 @@ class ControllerReadOnlyRepository(private val apiProvider: IAapApiProvider) {
         Result.failure(e)
     }
 
-    suspend fun getConfig(): Result<JsonElement> = try {
+    override suspend fun getConfig(): Result<JsonElement> = try {
         Result.success(apiProvider.getApiService().getConfig())
     } catch (e: CancellationException) {
         throw e
@@ -118,15 +118,15 @@ class ControllerReadOnlyRepository(private val apiProvider: IAapApiProvider) {
         Result.failure(e)
     }
 
-    suspend fun getWorkflowJobTemplateNodes(
-        page: Int = 1,
-        pageSize: Int = 25,
-        workflowJobTemplate: Int? = null
+    override suspend fun getWorkflowJobTemplateNodes(
+        page: Int,
+        pageSize: Int,
+        workflowJobTemplate: Int?
     ): Result<ListResult<WorkflowJobTemplateNode>> = runPaginated {
         apiProvider.getApiService().getWorkflowJobTemplateNodes(page, pageSize, workflowJobTemplate)
     }
 
-    suspend fun getSurveySpec(id: Int): Result<SurveySpec> = try {
+    override suspend fun getSurveySpec(id: Int): Result<SurveySpec> = try {
         Result.success(apiProvider.getApiService().getSurveySpec(id))
     } catch (e: CancellationException) {
         throw e

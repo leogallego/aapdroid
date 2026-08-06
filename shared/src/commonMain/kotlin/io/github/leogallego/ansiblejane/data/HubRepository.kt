@@ -3,65 +3,65 @@ package io.github.leogallego.ansiblejane.data
 import io.github.leogallego.ansiblejane.model.*
 import io.github.leogallego.ansiblejane.network.IAapApiProvider
 
-class HubRepository(private val apiProvider: IAapApiProvider) {
+class HubRepository(private val apiProvider: IAapApiProvider) : IHubRepository {
 
-    suspend fun getCollections(
-        page: Int = 1,
-        pageSize: Int = 20,
-        search: String? = null
+    override suspend fun getCollections(
+        page: Int,
+        pageSize: Int,
+        search: String?
     ): Result<ListResult<HubCollection>> = runV3Paginated {
         apiProvider.getHubApiService().getCollections(page, pageSize, search)
     }
 
-    suspend fun getNamespaces(
-        page: Int = 1,
-        pageSize: Int = 20,
-        search: String? = null
+    override suspend fun getNamespaces(
+        page: Int,
+        pageSize: Int,
+        search: String?
     ): Result<ListResult<HubNamespace>> = runV3Paginated {
         apiProvider.getHubApiService().getNamespaces(page, pageSize, search)
     }
 
-    suspend fun getCollectionVersions(
-        page: Int = 1,
-        pageSize: Int = 20,
-        status: String? = null
+    override suspend fun getCollectionVersions(
+        page: Int,
+        pageSize: Int,
+        status: String?
     ): Result<ListResult<HubCollectionVersion>> = runV3Paginated {
         apiProvider.getHubApiService().getCollectionVersions(page, pageSize, status)
     }
 
-    suspend fun getEeRepositories(
-        page: Int = 1,
-        pageSize: Int = 20,
-        search: String? = null
+    override suspend fun getEeRepositories(
+        page: Int,
+        pageSize: Int,
+        search: String?
     ): Result<ListResult<HubEeRepository>> = runV3Paginated {
         apiProvider.getHubApiService().getEeRepositories(page, pageSize, search)
     }
 
-    suspend fun getEeRegistries(
-        page: Int = 1,
-        pageSize: Int = 20,
-        search: String? = null
+    override suspend fun getEeRegistries(
+        page: Int,
+        pageSize: Int,
+        search: String?
     ): Result<ListResult<HubEeRegistry>> = runV3Paginated {
         apiProvider.getHubApiService().getEeRegistries(page, pageSize, search)
     }
 
-    suspend fun getUsers(
-        page: Int = 1,
-        pageSize: Int = 20
+    override suspend fun getUsers(
+        page: Int,
+        pageSize: Int
     ): Result<ListResult<HubUser>> = runV3Paginated {
         apiProvider.getHubApiService().getUsers(page, pageSize)
     }
 
-    suspend fun getGroups(
-        page: Int = 1,
-        pageSize: Int = 20
+    override suspend fun getGroups(
+        page: Int,
+        pageSize: Int
     ): Result<ListResult<HubGroup>> = runV3Paginated {
         apiProvider.getHubApiService().getGroups(page, pageSize)
     }
 
-    suspend fun getRoleDefinitions(
-        page: Int = 1,
-        pageSize: Int = 20
+    override suspend fun getRoleDefinitions(
+        page: Int,
+        pageSize: Int
     ): Result<ListResult<HubRoleDefinition>> = runPaginated {
         apiProvider.getHubApiService().getRoleDefinitions(page, pageSize)
     }

@@ -4,59 +4,59 @@ import io.github.leogallego.ansiblejane.model.*
 import io.github.leogallego.ansiblejane.network.IAapApiProvider
 import kotlin.coroutines.cancellation.CancellationException
 
-class EdaReadOnlyRepository(private val apiProvider: IAapApiProvider) {
+class EdaReadOnlyRepository(private val apiProvider: IAapApiProvider) : IEdaReadOnlyRepository {
 
-    suspend fun getRulebooks(
-        page: Int = 1,
-        pageSize: Int = 20,
-        name: String? = null
+    override suspend fun getRulebooks(
+        page: Int,
+        pageSize: Int,
+        name: String?
     ): Result<ListResult<EdaRulebook>> = runEdaPaginated {
         apiProvider.getEdaApiService().getRulebooks(page, pageSize, name)
     }
 
-    suspend fun getDecisionEnvironments(
-        page: Int = 1,
-        pageSize: Int = 20,
-        name: String? = null
+    override suspend fun getDecisionEnvironments(
+        page: Int,
+        pageSize: Int,
+        name: String?
     ): Result<ListResult<EdaDecisionEnvironment>> = runEdaPaginated {
         apiProvider.getEdaApiService().getDecisionEnvironments(page, pageSize, name)
     }
 
-    suspend fun getProjects(
-        page: Int = 1,
-        pageSize: Int = 20,
-        name: String? = null
+    override suspend fun getProjects(
+        page: Int,
+        pageSize: Int,
+        name: String?
     ): Result<ListResult<EdaProject>> = runEdaPaginated {
         apiProvider.getEdaApiService().getProjects(page, pageSize, name)
     }
 
-    suspend fun getCredentials(
-        page: Int = 1,
-        pageSize: Int = 20,
-        name: String? = null
+    override suspend fun getCredentials(
+        page: Int,
+        pageSize: Int,
+        name: String?
     ): Result<ListResult<EdaCredential>> = runEdaPaginated {
         apiProvider.getEdaApiService().getCredentials(page, pageSize, name)
     }
 
-    suspend fun getCredentialTypes(
-        page: Int = 1,
-        pageSize: Int = 20,
-        name: String? = null
+    override suspend fun getCredentialTypes(
+        page: Int,
+        pageSize: Int,
+        name: String?
     ): Result<ListResult<EdaCredentialType>> = runEdaPaginated {
         apiProvider.getEdaApiService().getCredentialTypes(page, pageSize, name)
     }
 
-    suspend fun getEventStreams(
-        page: Int = 1,
-        pageSize: Int = 20,
-        name: String? = null
+    override suspend fun getEventStreams(
+        page: Int,
+        pageSize: Int,
+        name: String?
     ): Result<ListResult<EdaEventStream>> = runEdaPaginated {
         apiProvider.getEdaApiService().getEventStreams(page, pageSize, name)
     }
 
-    suspend fun getUsers(
-        page: Int = 1,
-        pageSize: Int = 20
+    override suspend fun getUsers(
+        page: Int,
+        pageSize: Int
     ): Result<ListResult<EdaUser>> = runEdaPaginated {
         apiProvider.getEdaApiService().getUsers(page, pageSize)
     }

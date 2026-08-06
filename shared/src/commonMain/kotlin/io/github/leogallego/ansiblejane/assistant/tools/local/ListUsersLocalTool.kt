@@ -4,12 +4,12 @@ import ai.koog.agents.core.tools.annotations.LLMDescription
 import ai.koog.serialization.typeToken
 import io.github.leogallego.ansiblejane.assistant.tools.AapLocalTool
 import io.github.leogallego.ansiblejane.assistant.tools.listToolJson
-import io.github.leogallego.ansiblejane.data.ControllerReadOnlyRepository
+import io.github.leogallego.ansiblejane.data.IControllerReadOnlyRepository
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
 
 class ListUsersLocalTool(
-    private val repository: ControllerReadOnlyRepository
+    private val repository: IControllerReadOnlyRepository
 ) : AapLocalTool<ListUsersLocalTool.Args>(
     typeToken<Args>(), Args.serializer(),
     name = "list_users",

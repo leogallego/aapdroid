@@ -53,7 +53,6 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
@@ -65,18 +64,14 @@ import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.runtime.collectAsState
-import io.github.leogallego.ansiblejane.assistant.data.IAssistantRepository
-import io.github.leogallego.ansiblejane.assistant.engine.TokenUsage
 import io.github.leogallego.ansiblejane.assistant.data.KnownProvider
 import io.github.leogallego.ansiblejane.assistant.data.LlmProviderConfig
-import io.github.leogallego.ansiblejane.data.ITokenManager
+import io.github.leogallego.ansiblejane.presentation.main.MainViewModel
 import io.github.leogallego.ansiblejane.presentation.notifications.NotificationsViewModel
 import io.github.leogallego.ansiblejane.presentation.settings.SettingsTab
 import io.github.leogallego.ansiblejane.ui.notifications.NotificationsSheet
-import kotlinx.coroutines.launch
 import org.jetbrains.compose.resources.stringResource
 import aapremotecontrol.composeapp.generated.resources.*
-import org.koin.compose.koinInject
 import org.koin.compose.viewmodel.koinViewModel
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -86,13 +81,14 @@ fun MainScreen(
     onNavigateToApproval: (Int) -> Unit = {},
     content: @Composable (TopLevelTab, Segment) -> Unit
 ) {
-    val tokenManager: ITokenManager = koinInject()
-    val assistantRepository: IAssistantRepository = koinInject()
-    val activeInstance by tokenManager.activeInstance.collectAsState()
-    val activeConfig by assistantRepository.activeConfigFlow.collectAsState(null)
-    val savedConfigs by assistantRepository.savedConfigsFlow.collectAsState(emptyMap())
-    val activeProviderKey by assistantRepository.activeProviderKeyFlow.collectAsState(null)
-    val sessionTokens by assistantRepository.sessionTokensFlow.collectAsState()
+    val mainViewModel: MainViewModel = koinViewModel()
+    val mainUiState by mainViewModel.uiState.collectAsState()
+    val activeInstance = mainUiState.activeInstance
+    val activeConfig = mainUiState.activeConfig
+    val savedConfigs = mainUiState.savedConfigs
+    val activeProviderKey = mainUiState.activeProviderKey
+    val sessionTokens = mainUiState.sessionTokens
+    val sessionTokensFormatted = mainUiState.sessionTokensFormatted
 
     val tabs = TopLevelTab.entries
     val dashboardTabIndex = tabs.indexOfFirst { it is TopLevelTab.Dashboard }.coerceAtLeast(0)
@@ -111,7 +107,6 @@ fun MainScreen(
     var showNotificationsSheet by remember { mutableStateOf(false) }
 
     val snackbarHostState = remember { SnackbarHostState() }
-    val scope = rememberCoroutineScope()
     var showClearChatConfirm by remember { mutableStateOf(false) }
     var showProviderMenu by remember(selectedTabIndex) { mutableStateOf(false) }
 
@@ -123,7 +118,7 @@ fun MainScreen(
             confirmButton = {
                 TextButton(onClick = {
                     showClearChatConfirm = false
-                    assistantRepository.clearHistory()
+                    mainViewModel.clearHistory()
                 }) { Text(stringResource(Res.string.btn_clear)) }
             },
             dismissButton = {
@@ -197,11 +192,10 @@ fun MainScreen(
                                 activeProviderKey = activeProviderKey,
                                 savedConfigs = savedConfigs,
                                 sessionTokens = sessionTokens,
+                                sessionTokensFormatted = sessionTokensFormatted,
                                 onSwitchProvider = { key ->
                                     showProviderMenu = false
-                                    scope.launch {
-                                        assistantRepository.switchActiveProvider(key)
-                                    }
+                                    mainViewModel.switchActiveProvider(key)
                                 },
                                 onNavigateToSettings = {
                                     showProviderMenu = false
@@ -339,6 +333,7 @@ private fun ProviderDropdownMenu(
     activeProviderKey: String?,
     savedConfigs: Map<String, LlmProviderConfig>,
     sessionTokens: Int,
+    sessionTokensFormatted: String,
     onSwitchProvider: (String) -> Unit,
     onNavigateToSettings: () -> Unit
 ) {
@@ -352,10 +347,9 @@ private fun ProviderDropdownMenu(
         shape = RoundedCornerShape(16.dp)
     ) {
         if (sessionTokens > 0) {
-            val formatted = TokenUsage.formatTokenCount(sessionTokens)
             val tokensCd = stringResource(Res.string.provider_tokens_session_cd, sessionTokens)
             Text(
-                text = stringResource(Res.string.provider_tokens, formatted),
+                text = stringResource(Res.string.provider_tokens, sessionTokensFormatted),
                 style = MaterialTheme.typography.labelSmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 modifier = Modifier

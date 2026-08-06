@@ -54,7 +54,7 @@ Three separate Ktor API service interfaces: `AapApiService` (Controller), `EdaAp
 
 - **shared module (`shared/`):** KMP library -- platform abstractions (`platform/`), networking (Ktor `network/`), data layer (repositories, DataStore, encryption), AI tools and engine. Source sets: `commonMain`, `androidMain`, `jvmMain` (Desktop).
 - **composeApp module (`composeApp/`):** Compose Multiplatform UI -- navigation, screens (Dashboard, Templates, Activity, Infrastructure, EDA, Chat), themes, components. Source sets: `commonMain`, `androidMain`, `desktopMain`.
-- **app module (`app/`):** Android-only -- `MainActivity`, AI assistant (`assistant/` package with LLM providers, tool execution), Settings screens (General/Instances/Agent/Tools), Koin DI wiring. Depends on `:shared` and `:composeApp`.
+- **app module (`app/`):** Android shell -- `MainActivity`, notification channels, WorkManager (`ApprovalPollingWorker`), deep links, and Android Koin platform wiring. Depends on `:shared` and `:composeApp`. UI/settings live in `composeApp/`.
 
 ### Where to Put New Code (Android-first, Desktop stretch goal)
 
@@ -75,7 +75,7 @@ Rules:
 - **Network Layer:** Ktor `HttpClient` with engine abstraction (`HttpEngine` expect/actual), auth interceptor, self-signed cert support via `TlsTrustManager`. Instance discovery via `InstanceDiscovery` detects platform type (AAP/AWX/Jewel) and component versions.
 - **Data Layer:** `TokenManager` (DataStore + cryptography-kotlin encryption), repositories with `IRepository` interfaces in shared, `AssistantRepository` for LLM config persistence.
 - **Presentation:** ViewModels with `StateFlow<UiState>` (Idle, Loading, Success, Error pattern) in `composeApp`.
-- **Platform abstractions (`shared/.../platform/`):** `expect`/`actual` classes for `SecureKeyStorage`, `DataStoreFactory`, `ConnectivityObserver`, `BackgroundWorker`, `PlatformUtils`, `NotificationManager`, `TlsTrustManager`, `HttpEngine`.
+- **Platform abstractions (`shared/.../platform/`):** `expect`/`actual` classes for `SecureKeyStorage`, `DataStoreFactory`, `ConnectivityObserver`, `BackgroundWorker`, `PlatformUtils`, `NotificationManager`, `TlsTrustManager`, `HttpEngine`. Approval polling via `BackgroundWorker` is Android-only (WorkManager in `app/`); the desktop `actual` is an intentional no-op stub.
 
 ## Kotlin Architecture Contracts
 
@@ -91,16 +91,24 @@ When reviewing PRs, load the `skills/pr-architecture-review/SKILL.md` skill to c
 
 ## AI Assistant Architecture
 
-The AI assistant (`assistant/` package in `app/` module, Android-only for now) provides natural-language interaction with AAP via tool-use LLMs. The engine, LLM providers, and tools have zero Android dependencies and are planned to move to `shared/commonMain` (#243). Full pipeline flow with component responsibilities is documented in `docs/reference/tool-pipeline-architecture.md`.
+The AI assistant provides natural-language interaction with AAP via tool-use LLMs. Module placement after #243:
+
+| Concern | Module | Package |
+|---------|--------|---------|
+| Engine, LLM providers, tools, DI | `shared/` | `assistant/engine`, `assistant/llm`, `assistant/tools`, `assistant/di` |
+| UI + ViewModels | `composeApp/` | `assistant/ui`, `assistant/presentation` |
+| Android shell only | `app/` | notifications, WorkManager approval polling, deep links |
+
+Full pipeline flow with component responsibilities is documented in `docs/reference/tool-pipeline-architecture.md`.
 
 ### Tool System
 
 Two tool sources, unified via `Tool` interface (`shared/.../tools/ToolSpec.kt`):
 
-- **Local tools** (`tools/local/`) — 61 tools that call AAP APIs directly via Ktor. Zero latency, no MCP server required. Covers jobs, inventories, hosts, projects, credentials, EDA, schedules, workflow approvals, platform config, and more. Examples: `list_job_templates`, `launch_job`, `get_host_facts`, `approve_workflow`, `list_platform_services`, `ping`.
-- **MCP tools** (`tools/McpTool.kt`) — dynamically discovered from connected MCP servers. Each `McpTool` carries an optional `toolset` field for category-based routing. `McpServerConfig` supports per-toolset endpoints (e.g., `/job_management/mcp`) to reduce tool count per connection.
+- **Local tools** (`shared/.../tools/local/`) — 61 tools that call AAP APIs directly via Ktor. Zero latency, no MCP server required. Covers jobs, inventories, hosts, projects, credentials, EDA, schedules, workflow approvals, platform config, and more. Examples: `list_job_templates`, `launch_job`, `get_host_facts`, `approve_workflow`, `list_platform_services`, `ping`.
+- **MCP tools** (`shared/.../tools/McpTool.kt`) — dynamically discovered from connected MCP servers. Each `McpTool` carries an optional `toolset` field for category-based routing. `McpServerConfig` supports per-toolset endpoints (e.g., `/job_management/mcp`) to reduce tool count per connection.
 
-### ToolRouter (`app/.../engine/ToolRouter.kt`)
+### ToolRouter (`shared/.../engine/ToolRouter.kt`)
 
 Category-based query routing that selects relevant tools per user message:
 
@@ -112,7 +120,7 @@ Category-based query routing that selects relevant tools per user message:
 - **Read-only enforcement**: `McpServerConfig.readOnly` filters out write actions (`_create`, `_update`, `_delete`, `_launch`, etc.) from read-only MCP servers.
 - **Per-tool enable/disable**: `setToolEnabled()` / `isToolEnabled()` for user-facing tool management UI.
 
-### Engine Pipeline (`app/.../engine/`)
+### Engine Pipeline (`shared/.../engine/`)
 
 - **ChatEngine** — agentic loop: sends user message + tool schemas to LLM, executes tool calls, re-sends results until LLM produces a text response. Max 10 iterations.
 - **ToolExecutor** — executes tool calls with 30s timeout, 2-minute result cache, array capping (max 10 items), and smart truncation (8K char limit).
