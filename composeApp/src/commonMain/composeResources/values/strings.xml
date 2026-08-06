@@ -426,6 +426,8 @@
     <!-- ChatBubble.kt -->
     <string name="cd_copy_message">Copy message</string>
     <string name="chat_tool_call">Using %1$s</string>
+    <string name="cd_tool_read">Read tool: %1$s</string>
+    <string name="cd_tool_write">Write tool: %1$s</string>
     <string name="chat_action_copy">Copy</string>
     <string name="chat_action_regenerate">Regenerate</string>
 

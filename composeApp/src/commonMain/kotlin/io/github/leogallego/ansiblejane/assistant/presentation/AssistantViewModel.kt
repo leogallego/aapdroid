@@ -14,12 +14,14 @@ import io.github.leogallego.ansiblejane.assistant.engine.TokenUsage
 import io.github.leogallego.ansiblejane.assistant.engine.ToolExecutor
 import io.github.leogallego.ansiblejane.assistant.engine.AapRole
 import io.github.leogallego.ansiblejane.assistant.engine.ToolRouter
+import io.github.leogallego.ansiblejane.assistant.engine.ToolUsage
 import io.github.leogallego.ansiblejane.assistant.engine.toAapRole
 import io.github.leogallego.ansiblejane.assistant.llm.GeminiLlmProvider
 import io.github.leogallego.ansiblejane.assistant.llm.KoogLlmProvider
 import io.github.leogallego.ansiblejane.assistant.llm.LlmProvider
 import io.github.leogallego.ansiblejane.assistant.tools.CachedMcpTool
 import io.github.leogallego.ansiblejane.assistant.tools.LocalTool
+import io.github.leogallego.ansiblejane.assistant.tools.Tool
 import io.github.leogallego.ansiblejane.data.ITokenManager
 import io.github.leogallego.ansiblejane.data.IToolManifestRepository
 import io.github.leogallego.ansiblejane.model.ToolManifest
@@ -268,11 +270,12 @@ class AssistantViewModel(
 
             val textBuilder = StringBuilder()
             val usedSources = mutableSetOf<String>()
-            val usedToolNames = mutableListOf<String>()
+            val usedTools = linkedMapOf<String, ToolUsage>()
             var pendingTokenUsage: TokenUsage? = null
             val localNames = matchedLocal.map { it.spec.name }.toSet()
+            val toolByName: Map<String, Tool> = budgetedTools.associateBy { it.spec.name }
 
-            updateState { copy(streamingText = "Thinking...") }
+            updateState { copy(streamingText = "Thinking...", streamingTool = null) }
 
             engine.processMessage(
                 text, repository.getHistory(), toolSpecs, maxTokens, contextChars,
@@ -292,20 +295,29 @@ class AssistantViewModel(
                     when (event) {
                         is ChatEvent.TextDelta -> {
                             textBuilder.append(event.text)
-                            updateState { copy(streamingText = "Generating response...") }
+                            updateState { copy(streamingText = "Generating response...", streamingTool = null) }
                         }
                         is ChatEvent.ToolExecuting -> {
                             val toolSource = if (event.toolName in localNames) "local" else "mcp"
                             usedSources.add(toolSource)
-                            usedToolNames.add(event.toolName)
-                            updateState { copy(streamingText = "Querying [$toolSource]: ${event.toolName}...") }
+                            val usage = ToolUsage(
+                                name = event.toolName,
+                                isDestructive = toolByName[event.toolName]?.isDestructive == true,
+                            )
+                            usedTools[event.toolName] = usage
+                            updateState {
+                                copy(
+                                    streamingText = "Querying [$toolSource]: ${event.toolName}...",
+                                    streamingTool = usage,
+                                )
+                            }
                         }
                         is ChatEvent.ToolResult -> {
-                            updateState { copy(streamingText = "Processing results...") }
+                            updateState { copy(streamingText = "Processing results...", streamingTool = null) }
                             textBuilder.clear()
                         }
                         is ChatEvent.ConfirmationRequired -> {
-                            updateState { copy(streamingText = "Waiting for confirmation...") }
+                            updateState { copy(streamingText = "Waiting for confirmation...", streamingTool = null) }
                         }
                         is ChatEvent.AssistantMessage -> {
                             val responseSource = when {
@@ -318,7 +330,7 @@ class AssistantViewModel(
                                 role = Role.ASSISTANT,
                                 content = event.fullText,
                                 source = responseSource,
-                                toolsUsed = usedToolNames.distinct(),
+                                toolsUsed = usedTools.values.toList(),
                                 tokenUsage = pendingTokenUsage
                             )
                             repository.addMessage(finalMsg)
@@ -326,7 +338,8 @@ class AssistantViewModel(
                                 copy(
                                     messages = repository.getHistory().toImmutableList(),
                                     isGenerating = false,
-                                    streamingText = null
+                                    streamingText = null,
+                                    streamingTool = null,
                                 )
                             }
                         }
@@ -340,7 +353,8 @@ class AssistantViewModel(
                                 copy(
                                     messages = repository.getHistory().toImmutableList(),
                                     isGenerating = false,
-                                    streamingText = null
+                                    streamingText = null,
+                                    streamingTool = null,
                                 )
                             }
                         }
@@ -361,7 +375,7 @@ class AssistantViewModel(
 
     fun stopGeneration() {
         generateJob?.cancel()
-        updateState { copy(isGenerating = false, streamingText = null, pendingConfirmation = null) }
+        updateState { copy(isGenerating = false, streamingText = null, streamingTool = null, pendingConfirmation = null) }
     }
 
     fun regenerateLastMessage() {

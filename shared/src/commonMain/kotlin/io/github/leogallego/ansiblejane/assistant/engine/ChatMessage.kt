@@ -32,6 +32,16 @@ data class TokenUsage(
 @OptIn(ExperimentalAtomicApi::class)
 private val messageCounter = AtomicLong(0)
 
+/**
+ * A tool that was invoked while producing an assistant message.
+ * [isDestructive] mirrors [io.github.leogallego.ansiblejane.assistant.tools.Tool.isDestructive]
+ * for UI read/write indicators without changing confirmation behavior.
+ */
+data class ToolUsage(
+    val name: String,
+    val isDestructive: Boolean = false,
+)
+
 data class ChatMessage(
     val role: Role,
     val content: String,
@@ -39,7 +49,7 @@ data class ChatMessage(
     val toolCallId: String? = null,
     val toolName: String? = null,
     val source: ResponseSource? = null,
-    val toolsUsed: List<String> = emptyList(),
+    val toolsUsed: List<ToolUsage> = emptyList(),
     val tokenUsage: TokenUsage? = null,
     val timestamp: Long = 0L,
     val id: Long = nextId()

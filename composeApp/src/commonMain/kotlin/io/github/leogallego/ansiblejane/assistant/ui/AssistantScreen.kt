@@ -68,6 +68,7 @@ import androidx.compose.ui.tooling.preview.PreviewLightDark
 import io.github.leogallego.ansiblejane.assistant.engine.ChatMessage
 import io.github.leogallego.ansiblejane.assistant.engine.ResponseSource
 import io.github.leogallego.ansiblejane.assistant.engine.Role
+import io.github.leogallego.ansiblejane.assistant.engine.ToolUsage
 import io.github.leogallego.ansiblejane.assistant.presentation.AssistantUiState
 import io.github.leogallego.ansiblejane.assistant.presentation.AssistantViewModel
 import io.github.leogallego.ansiblejane.network.mcp.McpConnectionState
@@ -292,7 +293,10 @@ private fun ActiveChatContent(
 
             if (state.isGenerating) {
                 item(key = "streaming", contentType = "streaming") {
-                    StreamingIndicator(statusText = state.streamingText ?: stringResource(Res.string.assistant_thinking))
+                    StreamingIndicator(
+                        statusText = state.streamingText ?: stringResource(Res.string.assistant_thinking),
+                        streamingTool = state.streamingTool,
+                    )
                 }
             }
         }
@@ -361,6 +365,7 @@ private fun ActiveChatContent(
 @Composable
 private fun StreamingIndicator(
     statusText: String,
+    streamingTool: ToolUsage? = null,
     modifier: Modifier = Modifier
 ) {
     val infiniteTransition = rememberInfiniteTransition(label = "pulse")
@@ -400,7 +405,11 @@ private fun StreamingIndicator(
                 .clip(CircleShape)
                 .background(MaterialTheme.colorScheme.primary)
         )
-        Spacer(Modifier.width(8.dp))
+        Spacer(modifier.width(8.dp))
+        if (streamingTool != null) {
+            ToolCallIndicator(tool = streamingTool)
+            Spacer(modifier.width(8.dp))
+        }
         Text(
             text = statusText,
             style = MaterialTheme.typography.bodyMedium,
@@ -442,7 +451,7 @@ private fun AssistantWithMessagesPreview() {
                             "2. **System Health Check** - Runs health checks\n" +
                             "3. **Patch Management** - Applies security patches",
                         source = ResponseSource.MIXED,
-                        toolsUsed = listOf("list_job_templates"),
+                        toolsUsed = listOf(ToolUsage("list_job_templates"), ToolUsage("launch_job", isDestructive = true)),
                     ),
                     ChatMessage(
                         role = Role.USER,
