@@ -844,6 +844,35 @@ class ToolRouterTest {
     }
 
     @Test
+    fun `stem SHOULD keep setting intact to avoid set false-match`() {
+        assertEquals("setting", ToolRouter.stem("setting"))
+        assertEquals("setting", ToolRouter.stem("settings"))
+    }
+
+    @Test
+    fun `SHOULD NOT match CONFIGURATION WHEN query is please set a reminder`() {
+        router.registerLocalTools(
+            listOf(
+                localTool("get_settings"),
+                localTool("list_notification_templates"),
+                localTool("list_jobs")
+            )
+        )
+        val result = router.getToolsForQuery("please set a reminder")
+        assertFalse(result.categoryMatched)
+        assertTrue(result.tools.isEmpty() || result.tools.none { it.spec.name == "get_settings" })
+    }
+
+    @Test
+    fun `SHOULD match CONFIGURATION WHEN query asks for settings`() {
+        router.registerLocalTools(
+            listOf(localTool("get_settings"), localTool("list_hosts"))
+        )
+        val result = router.getToolsForQuery("show settings").tools
+        assertTrue(result.any { it.spec.name == "get_settings" })
+    }
+
+    @Test
     fun `SHOULD match JOBS WHEN query uses launcher stemmed to launch`() {
         val tools = listOf(
             localTool("launch_job", destructive = true),
@@ -1786,5 +1815,44 @@ class ToolRouterTest {
             AapRole.OPERATOR,
             User(3, "op").toAapRole()
         )
+    }
+
+    @Test
+    fun `searchAvailableTools SHOULD honor AUDITOR from last getToolsForQuery context`() {
+        router.registerLocalTools(
+            listOf(
+                localTool("list_job_templates"),
+                localTool("launch_job", destructive = true)
+            )
+        )
+        // Seed routing context with auditor role
+        router.getToolsForQuery("list job templates", aapRole = AapRole.AUDITOR)
+
+        val hits = router.searchAvailableTools("launch job")
+        assertFalse(hits.any { it.spec.name == "launch_job" })
+        assertTrue(hits.any { it.spec.name == "list_job_templates" } || hits.isEmpty())
+    }
+
+    @Test
+    fun `searchAvailableTools SHOULD filter MCP write tools for AUDITOR`() {
+        router.registerMcpTools(
+            listOf(
+                mcpTool("job_templates_list", toolset = "job_management"),
+                mcpTool("job_templates_launch_create", toolset = "job_management")
+            )
+        )
+        router.getToolsForQuery("list templates", aapRole = AapRole.AUDITOR)
+
+        val hits = router.searchAvailableTools("launch create template")
+        assertFalse(hits.any { it.spec.name.endsWith("_create") || it.spec.name.contains("launch") })
+    }
+
+    @Test
+    fun `AapInstance toAapRole SHOULD map persisted flags`() {
+        val auditor = io.github.leogallego.ansiblejane.model.AapInstance(
+            id = "1", baseUrl = "https://aap.example", token = "t",
+            isSystemAuditor = true
+        )
+        assertEquals(AapRole.AUDITOR, auditor.toAapRole())
     }
 }

@@ -1,5 +1,6 @@
 package io.github.leogallego.ansiblejane.assistant.engine
 
+import io.github.leogallego.ansiblejane.model.AapInstance
 import io.github.leogallego.ansiblejane.model.User
 
 /**
@@ -13,6 +14,12 @@ enum class AapRole {
 }
 
 fun User.toAapRole(): AapRole = when {
+    isSuperuser -> AapRole.ADMIN
+    isSystemAuditor -> AapRole.AUDITOR
+    else -> AapRole.OPERATOR
+}
+
+fun AapInstance.toAapRole(): AapRole = when {
     isSuperuser -> AapRole.ADMIN
     isSystemAuditor -> AapRole.AUDITOR
     else -> AapRole.OPERATOR

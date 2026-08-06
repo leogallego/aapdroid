@@ -24,7 +24,10 @@ data class AapInstance(
     val certFingerprint: String? = null,
     val mcpServerUrls: List<McpServerConfig>? = null,
     val mcpEnabled: Boolean = false,
-    val instanceInfo: InstanceInfo? = null
+    val instanceInfo: InstanceInfo? = null,
+    /** From `/api/v2/me/` — used by ToolRouter auditor filtering (#120). */
+    val isSuperuser: Boolean = false,
+    val isSystemAuditor: Boolean = false
 ) {
     val displayLabel: String
         get() = alias ?: extractHost(baseUrl)

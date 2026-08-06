@@ -52,6 +52,13 @@ class ToolRouter(
     private val userDisabled = mutableSetOf<ToolKey>()
     private val userEnabled = mutableSetOf<ToolKey>()
 
+    /** Last role/config from [getToolsForQuery] — used by meta-search so LLM tool calls honor filters. */
+    private data class RoutingContext(
+        val serverConfigs: List<McpServerConfig> = emptyList(),
+        val aapRole: AapRole? = null
+    )
+    private var lastRoutingContext = RoutingContext()
+
     private val initialized = atomic(false)
 
     init {
@@ -357,6 +364,8 @@ class ToolRouter(
                     w.dropLast(3) // execution → execut
                 w.endsWith("sion") && w.length > 5 ->
                     w.dropLast(3)
+                // Keep "setting" intact — stripping -ing yields "set" and false-matches CONFIGURATION
+                w == "setting" -> w
                 w.endsWith("ing") && w.length > 5 ->
                     undouble(w.dropLast(3))
                 w.endsWith("ed") && w.length > 4 ->
@@ -506,6 +515,7 @@ class ToolRouter(
         serverConfigs: List<McpServerConfig> = emptyList(),
         aapRole: AapRole? = null
     ): QueryResult = synchronized(this) {
+        lastRoutingContext = RoutingContext(serverConfigs, aapRole)
         val queryWords = tokenizeQuery(query)
         val stemmedQuery = stemQueryTokens(queryWords)
         Log.d(TAG, "QUERY: words=$queryWords, stemmed=$stemmedQuery, role=$aapRole")
@@ -572,6 +582,10 @@ class ToolRouter(
     /**
      * Search all enabled tools by name + description tokens (meta-search / #120).
      * Stable: score desc, then name asc.
+     *
+     * When [serverConfigs] is empty and [aapRole] is null, reuses the last
+     * [getToolsForQuery] routing context so auditor / read-only filters apply
+     * to LLM-invoked meta-search.
      */
     fun searchAvailableTools(
         query: String,
@@ -581,7 +595,9 @@ class ToolRouter(
     ): List<Tool> = synchronized(this) {
         val stemmedQuery = stemQueryTokens(tokenizeQuery(query))
         if (stemmedQuery.isEmpty()) return emptyList()
-        val candidates = collectEnabledTools(serverConfigs, aapRole)
+        val effectiveConfigs = serverConfigs.ifEmpty { lastRoutingContext.serverConfigs }
+        val effectiveRole = aapRole ?: lastRoutingContext.aapRole
+        val candidates = collectEnabledTools(effectiveConfigs, effectiveRole)
         return cherryPick(candidates, stemmedQuery, requireOverlap = true).take(maxResults.coerceAtLeast(0))
     }
 

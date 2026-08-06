@@ -138,5 +138,9 @@ val sharedAssistantModule = module {
 
     // Meta
     single { ListToolsLocalTool { get<ToolRouter>().getAllRegisteredTools() } } bind LocalTool::class
-    single { SearchAvailableToolsLocalTool { get<ToolRouter>() } } bind LocalTool::class
+    single {
+        SearchAvailableToolsLocalTool { query, maxResults ->
+            get<ToolRouter>().searchAvailableTools(query, maxResults = maxResults)
+        }
+    } bind LocalTool::class
 }

@@ -106,6 +106,23 @@ class FakeTokenManager : ITokenManager {
         }
     }
 
+    override suspend fun updateUserRole(
+        instanceId: String,
+        isSuperuser: Boolean,
+        isSystemAuditor: Boolean
+    ) {
+        _instances.value = _instances.value.map {
+            if (it.id == instanceId) {
+                it.copy(isSuperuser = isSuperuser, isSystemAuditor = isSystemAuditor)
+            } else it
+        }
+        _activeInstance.value?.let { active ->
+            if (active.id == instanceId) {
+                _activeInstance.value = _instances.value.find { it.id == instanceId }
+            }
+        }
+    }
+
     override suspend fun clearCredentials() {
         _instances.value = emptyList()
         _activeInstance.value = null

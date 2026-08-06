@@ -2,16 +2,19 @@ package io.github.leogallego.ansiblejane.assistant.tools.local
 
 import ai.koog.agents.core.tools.annotations.LLMDescription
 import ai.koog.serialization.typeToken
-import io.github.leogallego.ansiblejane.assistant.engine.ToolRouter
 import io.github.leogallego.ansiblejane.assistant.tools.AapLocalTool
+import io.github.leogallego.ansiblejane.assistant.tools.Tool
 import kotlinx.serialization.Serializable
 
 /**
  * Meta-search tool injected when category routing finds no match (#120 Tier 1).
  * Searches registered tool names + descriptions and returns matching summaries.
+ *
+ * Depends on a search lambda (not ToolRouter directly) to keep Tools → Engine
+ * layer direction correct — DI closes over ToolRouter + request context.
  */
 class SearchAvailableToolsLocalTool(
-    private val routerProvider: () -> ToolRouter
+    private val search: (query: String, maxResults: Int) -> List<Tool>
 ) : AapLocalTool<SearchAvailableToolsLocalTool.Args>(
     typeToken<Args>(),
     Args.serializer(),
@@ -28,7 +31,7 @@ class SearchAvailableToolsLocalTool(
     )
 
     override suspend fun execute(args: Args): String {
-        val hits = routerProvider().searchAvailableTools(args.query, maxResults = args.limit.coerceIn(1, 50))
+        val hits = search(args.query, args.limit.coerceIn(1, 50))
         if (hits.isEmpty()) {
             return "No tools matched \"${args.query}\". Try different keywords " +
                 "(e.g. hosts, jobs, credentials, eda)."
