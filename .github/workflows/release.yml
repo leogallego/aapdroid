@@ -18,6 +18,8 @@ on:
 
 permissions:
   contents: write
+  # flatpak-builder action persists .flatpak-builder via actions/cache
+  actions: write
 
 env:
   RELEASE_TAG: ${{ inputs.tag || github.ref_name }}
@@ -386,6 +388,11 @@ jobs:
     if: ${{ inputs.build_all || !contains(inputs.tag || github.ref_name, '-') }}
     needs: [desktop-linux-tar]
     runs-on: ubuntu-latest
+    # Preinstalled freedesktop 24.08 runtime/SDK (~1.5 GB) — avoids apt install each run.
+    # .flatpak-builder state is cached by flatpak-builder action (stable cache-key below).
+    container:
+      image: ghcr.io/flathub-infra/flatpak-github-actions:freedesktop-24.08
+      options: --privileged
     steps:
       - name: Checkout
         uses: actions/checkout@v7
@@ -397,27 +404,29 @@ jobs:
         with:
           name: desktop-linux-tar
 
-      - name: Install Flatpak and Builder
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y flatpak flatpak-builder
-          sudo flatpak remote-add --if-not-exists flathub https://flathub.org/repo/flathub.flatpakrepo
-          sudo flatpak install -y flathub org.freedesktop.Platform//24.08 org.freedesktop.Sdk//24.08
-
-      - name: Build Flatpak
+      - name: Prepare Flatpak sources
         run: |
           VERSION="${RELEASE_TAG#v}"
+          echo "VERSION=${VERSION}" >> "$GITHUB_ENV"
           TARBALL="ansible-jane-desktop-linux-${VERSION}.tar.gz"
 
           cp "${TARBALL}" flatpak/
           SHA256=$(sha256sum "${TARBALL}" | cut -d' ' -f1)
 
-          cd flatpak
-          sed -i "s|url: .*tar\.gz|path: ${TARBALL}|" io.github.leogallego.ansiblejane.yaml
-          sed -i "s|sha256: .*|sha256: ${SHA256}|" io.github.leogallego.ansiblejane.yaml
+          sed -i "s|url: .*tar\.gz|path: ${TARBALL}|" flatpak/io.github.leogallego.ansiblejane.yaml
+          sed -i "s|sha256: .*|sha256: ${SHA256}|" flatpak/io.github.leogallego.ansiblejane.yaml
 
-          flatpak-builder --repo=repo --force-clean build-dir io.github.leogallego.ansiblejane.yaml
-          flatpak build-bundle repo "../ansible-jane-desktop-linux-${VERSION}.flatpak" io.github.leogallego.ansiblejane
+      # Pin to v6.4 commit (issue #345). upload-artifact false keeps release job's
+      # artifact name `desktop-linux-flatpak` (action default name would differ).
+      # cache-key is runtime-scoped, not manifest-hash: CI patches sha256/path each
+      # release, so a content hash would never hit.
+      - name: Build Flatpak
+        uses: flatpak/flatpak-github-actions/flatpak-builder@fc80c13788c1ba0f45add99b19cf26b616ccab4f # v6.4
+        with:
+          bundle: ansible-jane-desktop-linux-${{ env.VERSION }}.flatpak
+          manifest-path: flatpak/io.github.leogallego.ansiblejane.yaml
+          cache-key: flatpak-builder-freedesktop-24.08
+          upload-artifact: false
 
       - name: Upload Flatpak artifact
         uses: actions/upload-artifact@v7
