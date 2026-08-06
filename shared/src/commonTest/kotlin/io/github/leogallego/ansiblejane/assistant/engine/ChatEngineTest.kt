@@ -133,6 +133,52 @@ class ChatEngineTest {
             awaitComplete()
         }
     }
+
+    @Test
+    fun `toolDescriptors SHOULD be sorted by name for stable prompt caching`() = runTest {
+        val provider = CapturingLlmProvider()
+        val executor = ToolExecutor(emptyList())
+        val engine = ChatEngine(provider, executor)
+        val tools = listOf(
+            io.github.leogallego.ansiblejane.assistant.tools.ToolSpec(
+                "zeta_tool", "Z", kotlinx.serialization.json.JsonObject(emptyMap())
+            ),
+            io.github.leogallego.ansiblejane.assistant.tools.ToolSpec(
+                "alpha_tool", "A", kotlinx.serialization.json.JsonObject(emptyMap())
+            ),
+            io.github.leogallego.ansiblejane.assistant.tools.ToolSpec(
+                "middle_tool", "M", kotlinx.serialization.json.JsonObject(emptyMap())
+            ),
+        )
+
+        engine.processMessage("hi", emptyList(), tools).test {
+            while (awaitItem() !is ChatEvent.AssistantMessage) { /* drain */ }
+            awaitComplete()
+        }
+
+        assertEquals(
+            listOf("alpha_tool", "middle_tool", "zeta_tool"),
+            provider.lastToolNames
+        )
+    }
+}
+
+private class CapturingLlmProvider : LlmProvider {
+    var lastToolNames: List<String> = emptyList()
+
+    override fun generateStream(
+        prompt: Prompt,
+        tools: List<ToolDescriptor>,
+        maxTokens: Int?
+    ): Flow<StreamFrame> = flow {
+        lastToolNames = tools.map { it.name }
+        emit(StreamFrame.TextDelta("ok"))
+        emit(StreamFrame.End(finishReason = "stop"))
+    }
+
+    override fun isAvailable(): Boolean = true
+    override fun modelInfo(): ModelInfo = ModelInfo("fake-model")
+    override fun close() {}
 }
 
 private data class FakeToolCall(val id: String, val name: String, val arguments: String)

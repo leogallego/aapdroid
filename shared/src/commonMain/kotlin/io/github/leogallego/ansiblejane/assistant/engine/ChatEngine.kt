@@ -67,7 +67,10 @@ class ChatEngine(
             history.filter { it.role == Role.USER || it.role == Role.ASSISTANT }
                 .forEach { messages.add(it) }
 
-            val toolDescriptors = tools.map { it.toToolDescriptor() }
+            // #439: stable alphabetical order so LLM KV/prefix caches can reuse tool schemas
+            val toolDescriptors = tools
+                .sortedBy { it.name }
+                .map { it.toToolDescriptor() }
             val toolSchemaChars = toolDescriptors.sumOf {
                 it.name.length + it.description.length +
                     it.requiredParameters.sumOf { p -> p.name.length + p.description.length + 20 } +
