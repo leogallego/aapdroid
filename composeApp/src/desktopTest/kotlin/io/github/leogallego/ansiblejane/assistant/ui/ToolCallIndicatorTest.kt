@@ -51,7 +51,10 @@ class ToolCallIndicatorTest {
         }
         waitForIdle()
 
-        onNodeWithTag("badge_tool_read").assertIsDisplayed()
-        onNodeWithTag("badge_tool_write").assertIsDisplayed()
+        // Parent combinedClickable merges semantics; query unmerged tree for tags.
+        onNodeWithTag("badge_tool_read", useUnmergedTree = true).assertIsDisplayed()
+        onNodeWithTag("badge_tool_write", useUnmergedTree = true).assertIsDisplayed()
+        onNodeWithText("list_hosts", useUnmergedTree = true).assertIsDisplayed()
+        onNodeWithText("launch_job", useUnmergedTree = true).assertIsDisplayed()
     }
 }
