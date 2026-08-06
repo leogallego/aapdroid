@@ -60,6 +60,13 @@ kotlin {
         namespace = "io.github.leogallego.ansiblejane.composeapp"
         compileSdk = 37
         minSdk = 31
+        // Required for Compose Multiplatform resources (.cvr) to package into the APK.
+        // AGP's com.android.kotlin.multiplatform.library leaves this off by default;
+        // without it, stringResource() crashes with MissingResourceException (CMP-9547).
+        // https://kotlinlang.org/docs/multiplatform/compose-multiplatform-resources-setup.html#resources-in-the-androidlibrary-target
+        androidResources {
+            enable = true
+        }
         compilerOptions {
             jvmTarget.set(JvmTarget.JVM_17)
         }
