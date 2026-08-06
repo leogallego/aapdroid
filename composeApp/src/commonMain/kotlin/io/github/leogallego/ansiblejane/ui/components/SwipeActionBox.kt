@@ -15,6 +15,7 @@ import androidx.compose.material3.SwipeToDismissBoxValue
 import androidx.compose.material3.Text
 import androidx.compose.material3.rememberSwipeToDismissBoxState
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
@@ -23,12 +24,14 @@ import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.dp
+import kotlinx.coroutines.launch
 
 /**
  * One-sided (or two-sided) swipe action wrapper around Material 3 [SwipeToDismissBox].
  *
  * Set [SwipeAction.removesItem] to false for toggle-style actions (favorite, open details)
- * so the row snaps back after the gesture. True removes/settles the row (e.g. dismiss).
+ * so the row snaps back after the gesture via [SwipeToDismissBoxState.reset].
+ * True leaves the dismiss settled so the parent can remove the row from the list.
  */
 data class SwipeAction(
     val icon: ImageVector,
@@ -48,23 +51,8 @@ fun SwipeActionBox(
     testTag: String? = null,
     content: @Composable () -> Unit,
 ) {
-    val state = rememberSwipeToDismissBoxState(
-        confirmValueChange = { value ->
-            when (value) {
-                SwipeToDismissBoxValue.EndToStart -> {
-                    val action = endToStart ?: return@rememberSwipeToDismissBoxState false
-                    action.onAction()
-                    action.removesItem
-                }
-                SwipeToDismissBoxValue.StartToEnd -> {
-                    val action = startToEnd ?: return@rememberSwipeToDismissBoxState false
-                    action.onAction()
-                    action.removesItem
-                }
-                SwipeToDismissBoxValue.Settled -> true
-            }
-        }
-    )
+    val state = rememberSwipeToDismissBoxState()
+    val scope = rememberCoroutineScope()
 
     val a11y = buildString {
         endToStart?.let { append("Swipe left: ${it.label}. ") }
@@ -84,8 +72,23 @@ fun SwipeActionBox(
             ),
         enableDismissFromEndToStart = endToStart != null,
         enableDismissFromStartToEnd = startToEnd != null,
+        onDismiss = { direction ->
+            val action = when (direction) {
+                SwipeToDismissBoxValue.EndToStart -> endToStart
+                SwipeToDismissBoxValue.StartToEnd -> startToEnd
+                SwipeToDismissBoxValue.Settled -> null
+            }
+            if (action == null) {
+                scope.launch { state.reset() }
+                return@SwipeToDismissBox
+            }
+            action.onAction()
+            if (!action.removesItem) {
+                scope.launch { state.reset() }
+            }
+        },
         backgroundContent = {
-            val direction = state.dismissDirection
+            val direction = state.targetValue
             val action = when (direction) {
                 SwipeToDismissBoxValue.EndToStart -> endToStart
                 SwipeToDismissBoxValue.StartToEnd -> startToEnd

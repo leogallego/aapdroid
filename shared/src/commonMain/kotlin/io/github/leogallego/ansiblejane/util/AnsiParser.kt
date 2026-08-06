@@ -100,9 +100,16 @@ object AnsiParser {
             }
 
             if (!foundFinal) {
-                // Partial sequence — emit remaining input as plain text.
-                buffer.append(input, i, input.length)
-                break
+                if (j >= input.length) {
+                    // Incomplete CSI at EOF — keep remainder as plain text.
+                    buffer.append(input, i, input.length)
+                    break
+                }
+                // Overlong / malformed CSI mid-stream — keep ESC as literal and resume
+                // so the rest of the log can still be colored.
+                buffer.append(ESC)
+                i++
+                continue
             }
 
             val finalByte = input[j]

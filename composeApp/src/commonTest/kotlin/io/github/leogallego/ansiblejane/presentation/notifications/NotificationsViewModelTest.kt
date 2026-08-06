@@ -81,4 +81,42 @@ class NotificationsViewModelTest {
             assertEquals("Network error", state.error)
         }
     }
+
+    @Test
+    fun `dismissApproval hides item across refreshIfStale reload`() = runTest {
+        fakeWorkflowRepo.approvals = listOf(
+            WorkflowApproval(id = 1, name = "Deploy to prod", status = "pending"),
+            WorkflowApproval(id = 2, name = "Scale web", status = "pending"),
+        )
+        val viewModel = NotificationsViewModel(fakeWorkflowRepo)
+        advanceUntilIdle()
+
+        viewModel.dismissApproval(1)
+        assertEquals(listOf(2), viewModel.uiState.value.approvals.map { it.id })
+
+        // Stale reopen path must not resurrect a swiped-away approval.
+        viewModel.refresh(clearSessionDismissals = false)
+        advanceUntilIdle()
+
+        assertEquals(listOf(2), viewModel.uiState.value.approvals.map { it.id })
+        assertEquals(1, viewModel.uiState.value.pendingCount)
+    }
+
+    @Test
+    fun `explicit refresh restores previously dismissed approvals`() = runTest {
+        fakeWorkflowRepo.approvals = listOf(
+            WorkflowApproval(id = 1, name = "Deploy to prod", status = "pending"),
+            WorkflowApproval(id = 2, name = "Scale web", status = "pending"),
+        )
+        val viewModel = NotificationsViewModel(fakeWorkflowRepo)
+        advanceUntilIdle()
+
+        viewModel.dismissApproval(1)
+        assertEquals(1, viewModel.uiState.value.approvals.size)
+
+        viewModel.refresh() // default clears session dismissals
+        advanceUntilIdle()
+
+        assertEquals(listOf(1, 2), viewModel.uiState.value.approvals.map { it.id })
+    }
 }

@@ -63,6 +63,17 @@ class AnsiParserTest {
     }
 
     @Test
+    fun overlong_csi_mid_stream_does_not_abort_rest_of_log() {
+        // CSI params longer than MAX_CSI_LENGTH without a final byte, then a valid SGR.
+        val junk = "0;".repeat(40) // 80 chars of params, no final
+        val input = "pre\u001B[$junk\u001B[31mRED\u001B[0m post"
+        val spans = AnsiParser.parse(input)
+        assertTrue(spans.any { it.text.contains("RED") && it.style.foreground == AnsiNamedColor.RED })
+        assertTrue(AnsiParser.strip(input).contains("RED"))
+        assertTrue(AnsiParser.strip(input).endsWith(" post"))
+    }
+
+    @Test
     fun merges_adjacent_same_style() {
         val input = "\u001B[32ma\u001B[32mb\u001B[0m"
         val spans = AnsiParser.parse(input)
