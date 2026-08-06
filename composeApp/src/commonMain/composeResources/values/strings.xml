@@ -444,4 +444,10 @@
 
     <!-- DetailRow.kt / DetailScaffold.kt / DetailSheetHeader.kt -->
     <string name="cd_close_details">Close details</string>
+
+    <!-- Swipe actions (#266) -->
+    <string name="swipe_favorite">Favorite</string>
+    <string name="swipe_unfavorite">Unfavorite</string>
+    <string name="swipe_view_details">Details</string>
+    <string name="swipe_dismiss">Dismiss</string>
 </resources>

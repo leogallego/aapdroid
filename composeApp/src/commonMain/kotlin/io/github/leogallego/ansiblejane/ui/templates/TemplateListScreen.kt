@@ -10,6 +10,8 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Star
+import androidx.compose.material.icons.outlined.StarOutline
+import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilterChip
@@ -46,6 +48,8 @@ import io.github.leogallego.ansiblejane.ui.components.LoadMoreIndicator
 import io.github.leogallego.ansiblejane.ui.components.LoadingList
 import io.github.leogallego.ansiblejane.ui.components.PaginationEffect
 import io.github.leogallego.ansiblejane.ui.components.SearchBar
+import io.github.leogallego.ansiblejane.ui.components.SwipeAction
+import io.github.leogallego.ansiblejane.ui.components.SwipeActionBox
 import io.github.leogallego.ansiblejane.ui.components.TemplateCard
 import io.github.leogallego.ansiblejane.model.AppError
 import io.github.leogallego.ansiblejane.ui.theme.AnsibleJaneTheme
@@ -189,14 +193,31 @@ fun TemplateListScreen(
                                     items = displayTemplates,
                                     key = { it.id }
                                 ) { template ->
-                                    TemplateCard(
-                                        template = template,
-                                        onClick = { viewModel.requestLaunch(template) },
-                                        onLaunch = { viewModel.requestLaunch(template) },
-                                        isFavorite = template.id in favoriteIds,
-                                        onToggleFavorite = { viewModel.toggleFavorite(template.id) },
-                                        testTagPrefix = "button"
-                                    )
+                                    val isFavorite = template.id in favoriteIds
+                                    SwipeActionBox(
+                                        endToStart = SwipeAction(
+                                            icon = if (isFavorite) Icons.Outlined.StarOutline else Icons.Filled.Star,
+                                            label = if (isFavorite) {
+                                                stringResource(Res.string.swipe_unfavorite)
+                                            } else {
+                                                stringResource(Res.string.swipe_favorite)
+                                            },
+                                            containerColor = MaterialTheme.colorScheme.primaryContainer,
+                                            contentColor = MaterialTheme.colorScheme.onPrimaryContainer,
+                                            onAction = { viewModel.toggleFavorite(template.id) },
+                                            removesItem = false,
+                                        ),
+                                        testTag = "swipe_template_${template.id}",
+                                    ) {
+                                        TemplateCard(
+                                            template = template,
+                                            onClick = { viewModel.requestLaunch(template) },
+                                            onLaunch = { viewModel.requestLaunch(template) },
+                                            isFavorite = isFavorite,
+                                            onToggleFavorite = { viewModel.toggleFavorite(template.id) },
+                                            testTagPrefix = "button"
+                                        )
+                                    }
                                 }
 
                                 if (state.isLoadingMore && !showFavoritesOnly) {

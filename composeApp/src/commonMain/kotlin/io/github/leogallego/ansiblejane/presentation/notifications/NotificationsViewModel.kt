@@ -40,6 +40,13 @@ class NotificationsViewModel(
         }
     }
 
+    /** Hide an approval from the sheet until the next refresh (session-local). */
+    fun dismissApproval(approvalId: Int) {
+        _uiState.update { state ->
+            state.copy(approvals = state.approvals.filterNot { it.id == approvalId })
+        }
+    }
+
     fun refresh() {
         val oldJob = refreshJob
         refreshJob = viewModelScope.launch {

@@ -36,7 +36,11 @@ import io.github.leogallego.ansiblejane.presentation.jobs.RecentJobsViewModel
 import io.github.leogallego.ansiblejane.ui.components.DateFormatter
 import io.github.leogallego.ansiblejane.ui.components.EmptyState
 import io.github.leogallego.ansiblejane.ui.components.ErrorMessage
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.OpenInNew
 import io.github.leogallego.ansiblejane.ui.components.JobStatusBadge
+import io.github.leogallego.ansiblejane.ui.components.SwipeAction
+import io.github.leogallego.ansiblejane.ui.components.SwipeActionBox
 import io.github.leogallego.ansiblejane.ui.components.LoadMoreIndicator
 import io.github.leogallego.ansiblejane.ui.components.LoadingList
 import io.github.leogallego.ansiblejane.ui.components.PaginationEffect
@@ -128,10 +132,22 @@ fun RecentJobsScreen(
                                     items = state.jobs,
                                     key = { it.id }
                                 ) { job ->
-                                    RecentJobItem(
-                                        job = job,
-                                        onClick = { onNavigateToJobStatus(job.id) }
-                                    )
+                                    SwipeActionBox(
+                                        endToStart = SwipeAction(
+                                            icon = Icons.AutoMirrored.Filled.OpenInNew,
+                                            label = stringResource(Res.string.swipe_view_details),
+                                            containerColor = MaterialTheme.colorScheme.secondaryContainer,
+                                            contentColor = MaterialTheme.colorScheme.onSecondaryContainer,
+                                            onAction = { onNavigateToJobStatus(job.id) },
+                                            removesItem = false,
+                                        ),
+                                        testTag = "swipe_job_${job.id}",
+                                    ) {
+                                        RecentJobItem(
+                                            job = job,
+                                            onClick = { onNavigateToJobStatus(job.id) }
+                                        )
+                                    }
                                 }
 
                                 if (state.isLoadingMore) {
