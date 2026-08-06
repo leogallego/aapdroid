@@ -47,6 +47,11 @@ class AuthRepository(
                 alias = alias,
                 existingId = existingInstanceId
             )
+            tokenManager.updateUserRole(
+                instanceId = instanceId,
+                isSuperuser = user.isSuperuser,
+                isSystemAuditor = user.isSystemAuditor
+            )
 
             apiProvider.evictInstance(instanceId)
             launchDiscovery(instanceId, baseUrl, token, apiVersion, trustSelfSigned)
@@ -82,6 +87,11 @@ class AuthRepository(
                 alias = instance.alias,
                 existingId = instanceId
             )
+            tokenManager.updateUserRole(
+                instanceId = instanceId,
+                isSuperuser = user.isSuperuser,
+                isSystemAuditor = user.isSystemAuditor
+            )
 
             apiProvider.evictInstance(instanceId)
             launchDiscovery(instanceId, instance.baseUrl, newToken, apiVersion, trustSelfSigned)
@@ -112,6 +122,11 @@ class AuthRepository(
                 api.getMe().results.firstOrNull()
             } ?: return CredentialStatus.ValidationFailed(
                 Exception("No user data returned")
+            )
+            tokenManager.updateUserRole(
+                instanceId = activeInstance.id,
+                isSuperuser = user.isSuperuser,
+                isSystemAuditor = user.isSystemAuditor
             )
             CredentialStatus.Valid(user)
         } catch (e: CancellationException) {

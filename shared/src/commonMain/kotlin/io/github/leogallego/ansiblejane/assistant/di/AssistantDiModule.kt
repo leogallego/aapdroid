@@ -1,8 +1,10 @@
 package io.github.leogallego.ansiblejane.assistant.di
 
 import io.github.leogallego.ansiblejane.assistant.engine.ToolRouter
+import io.github.leogallego.ansiblejane.assistant.engine.toAapRole
 import io.github.leogallego.ansiblejane.assistant.tools.LocalTool
 import io.github.leogallego.ansiblejane.assistant.tools.local.*
+import io.github.leogallego.ansiblejane.data.ITokenManager
 import io.github.leogallego.ansiblejane.network.createPlatformHttpClient
 import io.github.leogallego.ansiblejane.network.mcp.McpServerManager
 import io.ktor.client.plugins.defaultRequest
@@ -136,6 +138,22 @@ val sharedAssistantModule = module {
     single { ListHubGroupsLocalTool(get(), get()) } bind LocalTool::class
     single { ListHubRolesLocalTool(get(), get()) } bind LocalTool::class
 
-    // Meta
-    single { ListToolsLocalTool { get<ToolRouter>().getAllRegisteredTools() } } bind LocalTool::class
+    // Meta — role from active instance (not lastRoutingContext alone) so list/search
+    // honor auditor filtering even before the first getToolsForQuery in a process.
+    single {
+        ListToolsLocalTool {
+            val role = get<ITokenManager>().activeInstance.value?.toAapRole()
+            get<ToolRouter>().getRoutableTools(role)
+        }
+    } bind LocalTool::class
+    single {
+        SearchAvailableToolsLocalTool { query, maxResults ->
+            val role = get<ITokenManager>().activeInstance.value?.toAapRole()
+            get<ToolRouter>().searchAvailableTools(
+                query,
+                maxResults = maxResults,
+                aapRole = role
+            )
+        }
+    } bind LocalTool::class
 }

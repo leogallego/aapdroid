@@ -10,5 +10,6 @@ data class User(
     @SerialName("first_name") val firstName: String = "",
     @SerialName("last_name") val lastName: String = "",
     val email: String = "",
-    @SerialName("is_superuser") val isSuperuser: Boolean = false
+    @SerialName("is_superuser") val isSuperuser: Boolean = false,
+    @SerialName("is_system_auditor") val isSystemAuditor: Boolean = false
 )

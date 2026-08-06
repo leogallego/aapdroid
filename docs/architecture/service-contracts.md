@@ -249,7 +249,7 @@ for one-shot discovery of external endpoints would be over-engineering.
 
 - **Documented exceptions** (currently acceptable):
   - `ChatEngine.kt` (~509 LOC) — agentic loop orchestration is inherently complex
-  - `ToolRouter.kt` (~485 LOC) — category matching + scoring + MCP/local merging
+  - `ToolRouter.kt` (~790 LOC) — category matching + scoring + meta-search + MCP/local merging
   - `AapApiClient.kt` (~413 LOC) — REST facade with 50+ endpoint wrappers
   - `TokenManager.kt` (~422 LOC) — token lifecycle (candidate for future extraction)
   - `McpServerManager.kt` (~357 LOC) — MCP connection lifecycle
