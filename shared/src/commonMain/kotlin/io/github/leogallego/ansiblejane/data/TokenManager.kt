@@ -39,7 +39,8 @@ data class SerializedInstance(
     val mcpEnabled: Boolean = false,
     val instanceInfo: InstanceInfo? = null,
     val isSuperuser: Boolean = false,
-    val isSystemAuditor: Boolean = false
+    val isSystemAuditor: Boolean = false,
+    val userRoleFetched: Boolean = false
 )
 
 @Serializable
@@ -100,7 +101,8 @@ class TokenManager(
             mcpEnabled = serialized.mcpEnabled,
             instanceInfo = serialized.instanceInfo,
             isSuperuser = serialized.isSuperuser,
-            isSystemAuditor = serialized.isSystemAuditor
+            isSystemAuditor = serialized.isSystemAuditor,
+            userRoleFetched = serialized.userRoleFetched
         )
     }
 
@@ -117,7 +119,8 @@ class TokenManager(
             mcpEnabled = instance.mcpEnabled,
             instanceInfo = instance.instanceInfo,
             isSuperuser = instance.isSuperuser,
-            isSystemAuditor = instance.isSystemAuditor
+            isSystemAuditor = instance.isSystemAuditor,
+            userRoleFetched = instance.userRoleFetched
         )
     }
 
@@ -356,7 +359,8 @@ class TokenManager(
             if (serialized.id == instanceId) {
                 serialized.copy(
                     isSuperuser = isSuperuser,
-                    isSystemAuditor = isSystemAuditor
+                    isSystemAuditor = isSystemAuditor,
+                    userRoleFetched = true
                 )
             } else serialized
         }

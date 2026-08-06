@@ -529,7 +529,8 @@ class ToolRouter(
     fun getToolsForQuery(
         query: String,
         serverConfigs: List<McpServerConfig> = emptyList(),
-        aapRole: AapRole? = null
+        /** Default OPERATOR for callers that omit role; pass explicit role from the active instance. Unknown/`null` fail-closes. */
+        aapRole: AapRole? = AapRole.OPERATOR
     ): QueryResult = synchronized(this) {
         lastRoutingContext = RoutingContext(serverConfigs, aapRole)
         val queryWords = tokenizeQuery(query)
@@ -663,14 +664,15 @@ class ToolRouter(
         return QueryResult(emptyList(), categoryMatched = false)
     }
 
-    /** Prefer search_available_tools; never fall back to unfiltered list_tools for auditors. */
+    /** Prefer search_available_tools; never fall back to unfiltered list_tools for auditors/unknown. */
     private fun findMetaSearchTool(aapRole: AapRole?): Tool? {
         val search = localTools.firstOrNull { tool ->
             tool.spec.name == "search_available_tools" &&
                 isToolEnabled(tool.spec.name, ToolSource.LOCAL)
         }
         if (search != null) return search
-        if (aapRole == AapRole.AUDITOR) return null
+        // null role = unknown → fail closed (same as auditor)
+        if (aapRole == null || aapRole == AapRole.AUDITOR) return null
         return localTools.firstOrNull { tool ->
             tool.spec.name == "list_tools" &&
                 isToolEnabled(tool.spec.name, ToolSource.LOCAL)
@@ -697,8 +699,15 @@ class ToolRouter(
         return enabledLocal + enabledMcp
     }
 
+    /**
+     * Fail-closed: [AapRole.AUDITOR] and unknown (`null`) hide destructive / write-suffix tools.
+     * [AapRole.ADMIN] and [AapRole.OPERATOR] see the full enabled set.
+     */
     private fun passesRoleFilter(tool: Tool, aapRole: AapRole?): Boolean {
-        if (aapRole != AapRole.AUDITOR) return true
+        when (aapRole) {
+            AapRole.ADMIN, AapRole.OPERATOR -> return true
+            AapRole.AUDITOR, null -> Unit
+        }
         if (tool.isDestructive) return false
         return WRITE_ACTIONS.none { action -> tool.spec.name.endsWith(action) }
     }
@@ -747,11 +756,14 @@ class ToolRouter(
     }
 
     /**
-     * Like [getAllRegisteredTools] but applies the last routing role filter so
+     * Like [getAllRegisteredTools] but applies a role filter so
      * [ListToolsLocalTool] does not disclose write tools to auditors.
+     *
+     * Prefer an explicit [aapRole] from the active instance; falls back to the
+     * last [getToolsForQuery] context. Unknown/`null` fail-closes like auditor.
      */
-    fun getRoutableTools(): List<Pair<Tool, ToolSource>> = synchronized(this) {
-        val role = lastRoutingContext.aapRole
+    fun getRoutableTools(aapRole: AapRole? = null): List<Pair<Tool, ToolSource>> = synchronized(this) {
+        val role = aapRole ?: lastRoutingContext.aapRole
         val result = mutableListOf<Pair<Tool, ToolSource>>()
         localTools.forEach { tool ->
             if (isToolEnabled(tool.spec.name, ToolSource.LOCAL) && passesRoleFilter(tool, role)) {

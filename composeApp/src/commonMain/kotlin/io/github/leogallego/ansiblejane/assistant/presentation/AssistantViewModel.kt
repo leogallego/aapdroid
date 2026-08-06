@@ -12,6 +12,7 @@ import io.github.leogallego.ansiblejane.assistant.engine.ResponseSource
 import io.github.leogallego.ansiblejane.assistant.engine.Role
 import io.github.leogallego.ansiblejane.assistant.engine.TokenUsage
 import io.github.leogallego.ansiblejane.assistant.engine.ToolExecutor
+import io.github.leogallego.ansiblejane.assistant.engine.AapRole
 import io.github.leogallego.ansiblejane.assistant.engine.ToolRouter
 import io.github.leogallego.ansiblejane.assistant.engine.toAapRole
 import io.github.leogallego.ansiblejane.assistant.llm.GeminiLlmProvider
@@ -199,7 +200,8 @@ class AssistantViewModel(
             val mcpTools = mcpServerManager.mcpTools.value
             val activeInstance = tokenManager.activeInstance.value
             val serverConfigs = activeInstance?.mcpServerUrls ?: emptyList()
-            val aapRole = activeInstance?.toAapRole()
+            // No instance or role not yet fetched → AUDITOR (fail-closed)
+            val aapRole = activeInstance?.toAapRole() ?: AapRole.AUDITOR
             toolRouter.registerMcpTools(mcpTools)
 
             Log.d(TAG, "ROUTE: query=\"$text\", ${localTools.size} local, ${mcpTools.size} mcp, role=$aapRole")

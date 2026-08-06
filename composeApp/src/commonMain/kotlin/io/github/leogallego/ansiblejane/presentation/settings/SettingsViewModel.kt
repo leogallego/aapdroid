@@ -59,6 +59,8 @@ class SettingsViewModel(
             val activeConfig = assistantRepository.loadLlmConfig()
             val initialActiveKey = assistantRepository.activeProviderKeyFlow.first()
 
+            // Unfiltered on purpose: Settings enable/disable UI lists every registered
+            // tool. Chat routing applies auditor filtering via getRoutableTools / getToolsForQuery.
             val initialLocalTools = toolRouter.getAllRegisteredTools()
                 .filter { (_, source) -> source == ToolSource.LOCAL }
                 .map { (tool, _) ->

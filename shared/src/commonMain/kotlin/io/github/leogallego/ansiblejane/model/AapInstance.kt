@@ -27,7 +27,12 @@ data class AapInstance(
     val instanceInfo: InstanceInfo? = null,
     /** From `/api/v2/me/` — used by ToolRouter auditor filtering (#120). */
     val isSuperuser: Boolean = false,
-    val isSystemAuditor: Boolean = false
+    val isSystemAuditor: Boolean = false,
+    /**
+     * True after [io.github.leogallego.ansiblejane.data.ITokenManager.updateUserRole]
+     * persists `/api/v2/me/` flags. Until then routing fail-closes as auditor.
+     */
+    val userRoleFetched: Boolean = false
 ) {
     val displayLabel: String
         get() = alias ?: extractHost(baseUrl)

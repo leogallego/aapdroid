@@ -113,7 +113,11 @@ class FakeTokenManager : ITokenManager {
     ) {
         _instances.value = _instances.value.map {
             if (it.id == instanceId) {
-                it.copy(isSuperuser = isSuperuser, isSystemAuditor = isSystemAuditor)
+                it.copy(
+                    isSuperuser = isSuperuser,
+                    isSystemAuditor = isSystemAuditor,
+                    userRoleFetched = true
+                )
             } else it
         }
         _activeInstance.value?.let { active ->

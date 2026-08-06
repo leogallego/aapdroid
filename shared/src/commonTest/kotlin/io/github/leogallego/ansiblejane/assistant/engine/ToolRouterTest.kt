@@ -1,6 +1,7 @@
 package io.github.leogallego.ansiblejane.assistant.engine
 
 import io.github.leogallego.ansiblejane.TestOnly
+import io.github.leogallego.ansiblejane.assistant.tools.Tool
 import io.github.leogallego.ansiblejane.assistant.tools.ToolStub
 import io.github.leogallego.ansiblejane.assistant.tools.LocalTool
 import io.github.leogallego.ansiblejane.assistant.tools.ToolResult
@@ -1928,8 +1929,96 @@ class ToolRouterTest {
     fun `AapInstance toAapRole SHOULD map persisted flags`() {
         val auditor = io.github.leogallego.ansiblejane.model.AapInstance(
             id = "1", baseUrl = "https://aap.example", token = "t",
-            isSystemAuditor = true
+            isSystemAuditor = true,
+            userRoleFetched = true
         )
         assertEquals(AapRole.AUDITOR, auditor.toAapRole())
+    }
+
+    @Test
+    fun `AapInstance toAapRole SHOULD fail closed WHEN userRoleFetched is false`() {
+        val unknown = io.github.leogallego.ansiblejane.model.AapInstance(
+            id = "1", baseUrl = "https://aap.example", token = "t",
+            isSuperuser = true // ignored until fetched
+        )
+        assertEquals(AapRole.AUDITOR, unknown.toAapRole())
+
+        val operator = unknown.copy(
+            isSuperuser = false,
+            isSystemAuditor = false,
+            userRoleFetched = true
+        )
+        assertEquals(AapRole.OPERATOR, operator.toAapRole())
+    }
+
+    @Test
+    fun `null aapRole SHOULD fail closed like AUDITOR`() {
+        val tools = listOf(
+            localTool("list_job_templates"),
+            localTool("launch_job", destructive = true)
+        )
+        router.registerLocalTools(tools)
+
+        val result = router.getToolsForQuery(
+            "launch a job template",
+            aapRole = null
+        ).tools
+        assertFalse(result.any { it.spec.name == "launch_job" })
+    }
+
+    @Test
+    fun `getRoutableTools SHOULD hide destructive tools WHEN explicit AUDITOR without prior routing`() {
+        router.registerLocalTools(
+            listOf(
+                localTool("list_job_templates"),
+                localTool("launch_job", destructive = true)
+            )
+        )
+
+        val names = router.getRoutableTools(AapRole.AUDITOR).map { it.first.spec.name }
+        assertTrue("list_job_templates" in names)
+        assertFalse("launch_job" in names)
+    }
+
+    @Test
+    fun `getRoutableTools SHOULD fail closed WHEN role unknown and no routing context`() {
+        router.registerLocalTools(
+            listOf(
+                localTool("list_job_templates"),
+                localTool("launch_job", destructive = true)
+            )
+        )
+
+        val names = router.getRoutableTools(aapRole = null).map { it.first.spec.name }
+        assertTrue("list_job_templates" in names)
+        assertFalse("launch_job" in names)
+    }
+
+    @Test
+    fun `DESTRUCTIVE_LOCAL_TOOL_NAMES SHOULD all be hidden from AUDITOR when flagged`() {
+        val tools = DESTRUCTIVE_LOCAL_TOOL_NAMES.map { localTool(it, destructive = true) } +
+            localTool("list_jobs")
+        router.registerLocalTools(tools)
+
+        val names = router.getToolsForQuery(
+            "launch approve deny toggle job workflow schedule",
+            aapRole = AapRole.AUDITOR
+        ).tools.map { it.spec.name }.toSet()
+
+        for (writeName in DESTRUCTIVE_LOCAL_TOOL_NAMES) {
+            assertFalse(writeName in names, "$writeName should be hidden from auditor")
+        }
+        assertTrue("list_jobs" in names)
+    }
+
+    @Test
+    fun `DESTRUCTIVE_LOCAL_TOOL_NAMES SHOULD not rely on WRITE_SUFFIXES alone`() {
+        for (name in DESTRUCTIVE_LOCAL_TOOL_NAMES) {
+            val matchedBySuffix = Tool.WRITE_SUFFIXES.any { name.endsWith(it) }
+            assertFalse(
+                matchedBySuffix,
+                "$name unexpectedly matches WRITE_SUFFIXES — remove from DESTRUCTIVE_LOCAL_TOOL_NAMES"
+            )
+        }
     }
 }
