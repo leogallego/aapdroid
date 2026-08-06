@@ -31,6 +31,12 @@ mcp-sdk = "0.14.0"
 robolectric = "4.16.1"
 androidx-test-runner = "1.7.0"
 androidx-test-rules = "1.7.0"
+androidx-test-ext-junit = "1.3.0"
+androidx-test-uiautomator = "2.4.0"
+androidx-espresso-core = "3.7.0"
+# 1.5.x required for AGP 9 new DSL (1.4.x fails: "not a supported android module")
+androidx-benchmark = "1.5.0-beta01"
+androidx-profileinstaller = "1.4.1"
 screenshot = "0.0.1-alpha15"
 
 [libraries]
@@ -132,11 +138,17 @@ koin-test-junit4 = { group = "io.insert-koin", name = "koin-test-junit4", versio
 androidx-test-core = { group = "androidx.test", name = "core", version.ref = "androidx-test-runner" }
 androidx-test-runner = { group = "androidx.test", name = "runner", version.ref = "androidx-test-runner" }
 androidx-test-rules = { group = "androidx.test", name = "rules", version.ref = "androidx-test-rules" }
+androidx-test-ext-junit = { group = "androidx.test.ext", name = "junit", version.ref = "androidx-test-ext-junit" }
+androidx-test-uiautomator = { group = "androidx.test.uiautomator", name = "uiautomator", version.ref = "androidx-test-uiautomator" }
+androidx-espresso-core = { group = "androidx.test.espresso", name = "espresso-core", version.ref = "androidx-espresso-core" }
+androidx-benchmark-macro = { group = "androidx.benchmark", name = "benchmark-macro-junit4", version.ref = "androidx-benchmark" }
+androidx-profileinstaller = { group = "androidx.profileinstaller", name = "profileinstaller", version.ref = "androidx-profileinstaller" }
 screenshot-validation-api = { group = "com.android.tools.screenshot", name = "screenshot-validation-api", version.ref = "screenshot" }
 
 [plugins]
 android-application = { id = "com.android.application", version.ref = "agp" }
 android-library = { id = "com.android.library", version.ref = "agp" }
+android-test = { id = "com.android.test", version.ref = "agp" }
 android-multiplatform-library = { id = "com.android.kotlin.multiplatform.library", version.ref = "agp" }
 kotlin-multiplatform = { id = "org.jetbrains.kotlin.multiplatform", version.ref = "kotlin" }
 kotlin-android = { id = "org.jetbrains.kotlin.android", version.ref = "kotlin" }
@@ -145,3 +157,4 @@ kotlin-serialization = { id = "org.jetbrains.kotlin.plugin.serialization", versi
 compose-multiplatform = { id = "org.jetbrains.compose", version.ref = "compose-multiplatform" }
 screenshot = { id = "com.android.compose.screenshot", version.ref = "screenshot" }
 kotlin-atomicfu = { id = "org.jetbrains.kotlin.plugin.atomicfu", version.ref = "kotlin" }
+baselineprofile = { id = "androidx.baselineprofile", version.ref = "androidx-benchmark" }

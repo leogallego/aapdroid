@@ -19,3 +19,4 @@ dependencyResolutionManagement {
 include(":app")
 include(":shared")
 include(":composeApp")
+include(":baselineprofile")

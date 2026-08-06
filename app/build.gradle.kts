@@ -5,6 +5,7 @@ plugins {
     alias(libs.plugins.kotlin.compose)
     alias(libs.plugins.kotlin.serialization)
     alias(libs.plugins.screenshot)
+    alias(libs.plugins.baselineprofile)
     jacoco
 }
 
@@ -132,10 +133,19 @@ tasks.register<JacocoReport>("jacocoTestReport") {
     )
 }
 
+baselineProfile {
+    // Don't regenerate on every assemble — use checked-in / CI-generated profiles.
+    automaticGenerationDuringBuild = false
+    // Startup Profile → DEX layout optimizations (AGP 8.3+ default; keep explicit).
+    dexLayoutOptimization = true
+}
+
 dependencies {
     implementation(project(":shared"))
     implementation(project(":composeApp"))
     implementation(libs.androidx.core.ktx)
+    implementation(libs.androidx.profileinstaller)
+    baselineProfile(project(":baselineprofile"))
 
     implementation(platform(libs.androidx.compose.bom))
     implementation(libs.androidx.ui)

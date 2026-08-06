@@ -122,6 +122,12 @@ for one-shot discovery of external endpoints would be over-engineering.
 | `app/` | `shared`, `composeApp` | — |
 | `composeApp/` | `shared` | `app/` |
 | `shared/` | — | `app/`, `composeApp/` |
+| `baselineprofile/` | `:app` (via `targetProjectPath` + Macrobenchmark) | Product logic, `shared/` / `composeApp/` imports |
+
+- **`:baselineprofile` is Android-only instrumentation.** It is a `com.android.test`
+  module that drives the installed `:app` APK through UiAutomator to generate Baseline
+  and Startup Profiles. It must not host repositories, tools, ViewModels, or other
+  product logic — those stay in `shared/` / `composeApp/` / `app/`.
 
 - **`commonMain` must never import Android or JVM APIs.** No `android.*`, `java.*`,
   or `javax.*` imports in `commonMain` source sets.
@@ -304,6 +310,7 @@ for one-shot discovery of external endpoints would be over-engineering.
   | Shared-layer integration tests (backup, serialization) | `composeApp/src/commonTest/` | `kotlin.test` |
   | Compose Desktop screen smoke tests | `composeApp/src/desktopTest/` | `kotlin.test` + Compose MP test API |
   | Android-only features (AppFunctions, widgets, WorkManager) | `app/src/test/` | JUnit4 |
+  | Baseline / Startup Profile generators (Macrobenchmark) | `baselineprofile/` (`com.android.test`) | JUnit4 + `BaselineProfileRule` |
 
 - **`kotlin.test` in all KMP-compatible source sets.** `commonTest`, `jvmTest`, and
   `desktopTest` must use `kotlin.test` annotations (`@Test`, `@BeforeTest`, `@AfterTest`).
@@ -322,9 +329,14 @@ for one-shot discovery of external endpoints would be over-engineering.
   import org.junit.Rule
   ```
 
-- **JUnit4 is restricted to `app/src/test/`.** Only Android-only tests that require
-  Robolectric, Android Compose test rules (`createComposeRule()`), or Android-specific
-  test infrastructure may use JUnit4.
+- **JUnit4 is restricted to Android-only test surfaces.** Allowed locations:
+  - `app/src/test/` — Robolectric, Android Compose test rules (`createComposeRule()`),
+    or other Android-specific unit/instrumentation helpers
+  - `baselineprofile/` — Macrobenchmark Baseline/Startup Profile generators
+    (`BaselineProfileRule` requires JUnit4 `@Rule` / `@RunWith`)
+
+  Do not use JUnit4 in KMP-compatible source sets (`commonTest`, `jvmTest`,
+  `desktopTest`).
 
 - **MainDispatcher setup follows the source set.** KMP-compatible tests use the
   `setupMainDispatcher()` / `tearDownMainDispatcher()` utility functions in `@BeforeTest` /
@@ -427,3 +439,4 @@ tombstones or "removed" markers.
 | 1.2.1 | 2026-06-22 | Add lifecycle tags for transitional rules (#392) |
 | 1.3.0 | 2026-06-26 | Add §11 String Resources contract (#293) |
 | 1.3.1 | 2026-08-05 | Document Android-only BackgroundWorker approval polling (#433) |
+| 1.3.2 | 2026-08-06 | Document `:baselineprofile` module + JUnit4 Macrobenchmark exception (#214) |
