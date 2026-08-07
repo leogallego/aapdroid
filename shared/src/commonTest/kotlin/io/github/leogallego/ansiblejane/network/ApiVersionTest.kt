@@ -1,5 +1,7 @@
 package io.github.leogallego.ansiblejane.network
 
+import io.github.leogallego.ansiblejane.model.ApiVersion
+
 import kotlin.test.Test
 import kotlin.test.assertEquals
 

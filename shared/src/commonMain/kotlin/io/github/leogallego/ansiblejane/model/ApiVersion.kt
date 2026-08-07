@@ -1,4 +1,4 @@
-package io.github.leogallego.ansiblejane.network
+package io.github.leogallego.ansiblejane.model
 
 enum class ApiVersion(val prefix: String) {
     CONTROLLER_V2("/api/controller/v2/"),

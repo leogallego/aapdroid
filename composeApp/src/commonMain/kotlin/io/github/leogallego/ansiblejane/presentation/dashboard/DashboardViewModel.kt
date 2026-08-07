@@ -12,7 +12,7 @@ import io.github.leogallego.ansiblejane.data.ITokenManager
 import io.github.leogallego.ansiblejane.model.AppError
 import io.github.leogallego.ansiblejane.model.Job
 import io.github.leogallego.ansiblejane.model.JobStatus
-import io.github.leogallego.ansiblejane.network.IAapApiProvider
+import io.github.leogallego.ansiblejane.data.IEdaActivationRepository
 import kotlinx.coroutines.async
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -35,7 +35,7 @@ class DashboardViewModel(
     private val hostRepository: IHostRepository,
     private val projectRepository: IProjectRepository,
     private val scheduleRepository: IScheduleRepository,
-    private val apiProvider: IAapApiProvider,
+    private val edaActivationRepository: IEdaActivationRepository,
     private val tokenManager: ITokenManager
 ) : ViewModel() {
 
@@ -117,14 +117,8 @@ class DashboardViewModel(
                 projectRepository.getProjects(pageSize = 1)
             }
             val edaDeferred = async {
-                try {
-                    val service = apiProvider.getEdaApiService()
-                    val activations = service.getActivations(pageSize = 200)
-                    val total = activations.count
-                    val running = activations.results.count { it.status == "running" }
-                    Pair(total, running)
-                } catch (_: Exception) {
-                    null
+                edaActivationRepository.getActivations(pageSize = 200).getOrNull()?.let { result ->
+                    result.totalCount to result.activations.count { it.status == "running" }
                 }
             }
             val jobHistoryDeferred = async {

@@ -9,19 +9,14 @@ import io.github.leogallego.ansiblejane.assistant.presentation.ModelFetchState
 import io.github.leogallego.ansiblejane.data.ITokenManager
 import io.github.leogallego.ansiblejane.data.IToolManifestRepository
 import io.github.leogallego.ansiblejane.data.IUserPreferencesRepository
+import io.github.leogallego.ansiblejane.data.IAuthRepository
+import io.github.leogallego.ansiblejane.data.IMcpConnectionRepository
 import io.github.leogallego.ansiblejane.model.PollInterval
 import io.github.leogallego.ansiblejane.model.McpServerConfig
-import io.github.leogallego.ansiblejane.network.ApiVersion
-import io.github.leogallego.ansiblejane.network.IAapApiProvider
-import io.github.leogallego.ansiblejane.network.InstanceDiscovery
-import io.github.leogallego.ansiblejane.network.createPlatformHttpClient
-import io.github.leogallego.ansiblejane.network.mcp.McpServerManager
 import io.github.leogallego.ansiblejane.assistant.engine.ToolRouter
 import io.github.leogallego.ansiblejane.assistant.tools.ToolSource
 import io.github.leogallego.ansiblejane.ui.components.DateFormatter
 import io.github.leogallego.ansiblejane.ui.components.TimeFormat
-import io.ktor.client.HttpClient
-import io.ktor.client.plugins.HttpTimeout
 import io.ktor.http.parseUrl
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -38,14 +33,14 @@ import kotlinx.datetime.TimeZone
 @OptIn(kotlinx.coroutines.ExperimentalCoroutinesApi::class)
 class SettingsViewModel(
     private val tokenManager: ITokenManager,
-    private val apiProvider: IAapApiProvider,
+    private val authRepository: IAuthRepository,
     private val userPreferences: IUserPreferencesRepository,
     private val assistantRepository: IAssistantRepository,
-    private val mcpServerManager: McpServerManager,
+    private val mcpConnectionRepository: IMcpConnectionRepository,
     private val manifestRepository: IToolManifestRepository,
-    private val instanceDiscovery: InstanceDiscovery,
     private val toolRouter: ToolRouter,
-    private val json: Json
+    private val json: Json,
+    private val modelFetcher: ModelFetcher
 ) : ViewModel() {
 
     private val _uiState = MutableStateFlow<SettingsUiState>(SettingsUiState.Loading)
@@ -77,7 +72,7 @@ class SettingsViewModel(
                 tokenManager.activeInstance,
                 userPreferences.timezoneId,
                 userPreferences.timeFormat,
-                mcpServerManager.connections
+                mcpConnectionRepository.connections
             ) { instances, active, timezone, timeFormat, connections ->
                 val newZone = timezone?.let {
                     try { TimeZone.of(it) } catch (_: Exception) { null }
@@ -99,7 +94,7 @@ class SettingsViewModel(
                 val preservedExpandedCats = (current as? SettingsUiState.Ready)?.expandedCategories ?: emptySet()
                 val preservedLocalTools = (current as? SettingsUiState.Ready)?.localTools ?: initialLocalTools
 
-                val allMcpTools = mcpServerManager.mcpTools.value
+                val allMcpTools = mcpConnectionRepository.mcpTools.value
                 val mcpServerTools = allMcpTools
                     .groupBy { it.serverLabel }
                     .filterKeys { it != null }
@@ -192,8 +187,7 @@ class SettingsViewModel(
 
     fun removeInstance(instanceId: String) {
         viewModelScope.launch {
-            apiProvider.evictInstance(instanceId)
-            tokenManager.removeInstance(instanceId)
+            authRepository.logoutInstance(instanceId)
         }
     }
 
@@ -216,74 +210,49 @@ class SettingsViewModel(
     ) {
         viewModelScope.launch {
             updateReady { copy(instanceEditSaving = true, instanceEditError = null) }
-            try {
-                val instance = tokenManager.getInstanceById(instanceId)
-                if (instance == null) {
+            val result = authRepository.saveInstanceEdits(
+                instanceId = instanceId,
+                token = token,
+                alias = alias,
+                trustSelfSigned = trustSelfSigned
+            )
+            result.fold(
+                onSuccess = { updated ->
                     updateReady {
                         copy(
-                            instanceEditSaving = false,
-                            instanceEditError = "Instance not found"
+                            selectedInstanceForDetails = updated,
+                            instanceEditSaving = false
                         )
                     }
-                    return@launch
+                },
+                onFailure = { e ->
+                    val updated = tokenManager.instances.value.find { it.id == instanceId }
+                    updateReady {
+                        copy(
+                            selectedInstanceForDetails = updated,
+                            instanceEditSaving = false,
+                            instanceEditError = e.message ?: "Failed to save changes"
+                        )
+                    }
                 }
-                val apiVersion = try {
-                    ApiVersion.valueOf(instance.apiVersion)
-                } catch (_: Exception) {
-                    ApiVersion.CONTROLLER_V2
-                }
-                tokenManager.saveInstance(
-                    baseUrl = instance.baseUrl,
-                    token = token ?: instance.token,
-                    alias = alias,
-                    apiVersion = apiVersion,
-                    trustSelfSigned = trustSelfSigned,
-                    existingId = instanceId
-                )
-                if (token != null || trustSelfSigned != instance.trustSelfSigned) {
-                    apiProvider.evictInstance(instanceId)
-                }
-                val updated = tokenManager.instances.value.find { it.id == instanceId }
-                updateReady {
-                    copy(
-                        selectedInstanceForDetails = updated,
-                        instanceEditSaving = false
-                    )
-                }
-            } catch (e: Exception) {
-                val updated = tokenManager.instances.value.find { it.id == instanceId }
-                updateReady {
-                    copy(
-                        selectedInstanceForDetails = updated,
-                        instanceEditSaving = false,
-                        instanceEditError = e.message ?: "Failed to save changes"
-                    )
-                }
-            }
+            )
         }
     }
 
     fun refreshInstanceInfo(instanceId: String) {
         viewModelScope.launch {
-            val instance = tokenManager.instances.value.find { it.id == instanceId } ?: return@launch
             updateReady { copy(discoveryRefreshing = true, discoveryError = null) }
-            try {
-                val apiVersion = try {
-                    ApiVersion.valueOf(instance.apiVersion)
-                } catch (_: Exception) {
-                    ApiVersion.CONTROLLER_V2
+            val result = authRepository.refreshInstanceInfo(instanceId)
+            result.fold(
+                onSuccess = {
+                    val updated = tokenManager.instances.value.find { it.id == instanceId }
+                    updateReady { copy(selectedInstanceForDetails = updated) }
+                },
+                onFailure = { e ->
+                    updateReady { copy(discoveryError = e.message ?: "Discovery failed") }
                 }
-                val info = instanceDiscovery.discover(
-                    instance.baseUrl, instance.token, apiVersion, instance.trustSelfSigned
-                )
-                tokenManager.updateInstanceInfo(instanceId, info)
-                val updated = tokenManager.instances.value.find { it.id == instanceId }
-                updateReady { copy(selectedInstanceForDetails = updated) }
-            } catch (e: Exception) {
-                updateReady { copy(discoveryError = e.message ?: "Discovery failed") }
-            } finally {
-                updateReady { copy(discoveryRefreshing = false) }
-            }
+            )
+            updateReady { copy(discoveryRefreshing = false) }
         }
     }
 
@@ -344,24 +313,19 @@ class SettingsViewModel(
     fun fetchAvailableModels(baseUrl: String, apiKey: String?) {
         viewModelScope.launch {
             updateReady { copy(modelFetchState = ModelFetchState.Loading) }
-            val client = buildLlmClient()
-            try {
-                val fetcher = ModelFetcher(client, json)
-                when (val result = fetcher.fetchModels(baseUrl, apiKey)) {
-                    is ModelFetcher.Result.Success -> {
-                        updateReady {
-                            copy(
-                                fetchedModels = result.models,
-                                modelFetchState = ModelFetchState.Success(result.models.size)
-                            )
-                        }
-                    }
-                    is ModelFetcher.Result.Error -> {
-                        updateReady { copy(modelFetchState = ModelFetchState.Error(result.message)) }
+            val trustSelfSigned = tokenManager.activeInstance.value?.trustSelfSigned == true
+            when (val result = modelFetcher.fetchModels(baseUrl, apiKey, trustSelfSigned)) {
+                is ModelFetcher.Result.Success -> {
+                    updateReady {
+                        copy(
+                            fetchedModels = result.models,
+                            modelFetchState = ModelFetchState.Success(result.models.size)
+                        )
                     }
                 }
-            } finally {
-                client.close()
+                is ModelFetcher.Result.Error -> {
+                    updateReady { copy(modelFetchState = ModelFetchState.Error(result.message)) }
+                }
             }
         }
     }
@@ -508,7 +472,7 @@ class SettingsViewModel(
 
     fun refreshMcpServer(label: String) {
         viewModelScope.launch {
-            mcpServerManager.reconnectServer(label)
+            mcpConnectionRepository.reconnectServer(label)
         }
     }
 
@@ -518,8 +482,8 @@ class SettingsViewModel(
             try {
                 val instance = tokenManager.activeInstance.value ?: return@launch
                 updateReady { copy(isRefreshingTools = true) }
-                mcpServerManager.connectAllWithCache(instance, forceRefresh = true)
-                mcpServerManager.buildManifest(instance)?.let {
+                mcpConnectionRepository.connectAllWithCache(instance, forceRefresh = true)
+                mcpConnectionRepository.buildManifest(instance)?.let {
                     manifestRepository.saveManifest(instance.id, it)
                 }
             } finally {
@@ -537,16 +501,6 @@ class SettingsViewModel(
 
     // --- Private helpers ---
 
-    private fun buildLlmClient(): HttpClient {
-        val instance = tokenManager.activeInstance.value
-        return createPlatformHttpClient(trustSelfSigned = instance?.trustSelfSigned == true) {
-            install(HttpTimeout) {
-                requestTimeoutMillis = 30_000
-                connectTimeoutMillis = 10_000
-                socketTimeoutMillis = 30_000
-            }
-        }
-    }
 
     private inline fun updateReady(crossinline transform: SettingsUiState.Ready.() -> SettingsUiState.Ready) {
         _uiState.update { current ->

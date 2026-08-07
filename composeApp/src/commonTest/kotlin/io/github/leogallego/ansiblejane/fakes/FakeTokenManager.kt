@@ -4,7 +4,7 @@ import io.github.leogallego.ansiblejane.data.ITokenManager
 import io.github.leogallego.ansiblejane.model.AapInstance
 import io.github.leogallego.ansiblejane.model.InstanceInfo
 import io.github.leogallego.ansiblejane.model.McpServerConfig
-import io.github.leogallego.ansiblejane.network.ApiVersion
+import io.github.leogallego.ansiblejane.model.ApiVersion
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -32,6 +32,7 @@ class FakeTokenManager : ITokenManager {
         existingId: String?
     ): String {
         val id = existingId ?: saveInstanceResult
+        val previous = _instances.value.find { it.id == id }
         val instance = AapInstance(
             id = id,
             baseUrl = baseUrl,
@@ -39,10 +40,22 @@ class FakeTokenManager : ITokenManager {
             alias = alias,
             apiVersion = apiVersion.name,
             trustSelfSigned = trustSelfSigned,
-            certFingerprint = certFingerprint
+            certFingerprint = certFingerprint,
+            mcpServerUrls = previous?.mcpServerUrls,
+            mcpEnabled = previous?.mcpEnabled ?: false,
+            instanceInfo = previous?.instanceInfo,
+            isSuperuser = previous?.isSuperuser ?: false,
+            isSystemAuditor = previous?.isSystemAuditor ?: false,
+            userRoleFetched = previous?.userRoleFetched ?: false
         )
-        _instances.value = _instances.value + instance
-        if (_activeInstance.value == null) _activeInstance.value = instance
+        _instances.value = if (existingId != null) {
+            _instances.value.map { if (it.id == id) instance else it }
+        } else {
+            _instances.value + instance
+        }
+        if (_activeInstance.value == null || _activeInstance.value?.id == id) {
+            _activeInstance.value = instance
+        }
         return id
     }
 

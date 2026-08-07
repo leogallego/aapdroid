@@ -21,7 +21,6 @@ import io.github.leogallego.ansiblejane.presentation.workflows.WorkflowTemplates
 import io.github.leogallego.ansiblejane.assistant.presentation.AssistantViewModel
 import io.github.leogallego.ansiblejane.assistant.tools.LocalTool
 import io.github.leogallego.ansiblejane.presentation.settings.SettingsViewModel
-import io.github.leogallego.ansiblejane.network.networkJson
 import org.koin.core.module.dsl.viewModel
 import org.koin.core.module.dsl.viewModelOf
 import org.koin.dsl.module
@@ -52,7 +51,8 @@ val presentationModule = module {
     viewModelOf(::BackupViewModel)
     viewModel {
         AssistantViewModel(
-            mcpServerManager = get(),
+            mcpConnectionRepository = get(),
+            mcpToolInvoker = get(),
             repository = get(),
             tokenManager = get(),
             manifestRepository = get(),
@@ -63,14 +63,14 @@ val presentationModule = module {
     viewModel {
         SettingsViewModel(
             tokenManager = get(),
-            apiProvider = get(),
+            authRepository = get(),
             userPreferences = get(),
             assistantRepository = get(),
-            mcpServerManager = get(),
+            mcpConnectionRepository = get(),
             manifestRepository = get(),
-            instanceDiscovery = get(),
             toolRouter = get(),
-            json = networkJson
+            json = get(),
+            modelFetcher = get()
         )
     }
 }

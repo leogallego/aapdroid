@@ -2,7 +2,7 @@ package io.github.leogallego.ansiblejane.assistant.tools
 
 import io.modelcontextprotocol.kotlin.sdk.client.Client
 import io.modelcontextprotocol.kotlin.sdk.types.TextContent
-import io.github.leogallego.ansiblejane.network.mcp.McpToolDefinition
+import io.github.leogallego.ansiblejane.model.McpToolDefinition
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.buildJsonObject

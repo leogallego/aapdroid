@@ -1,5 +1,7 @@
 package io.github.leogallego.ansiblejane.network
 
+import io.github.leogallego.ansiblejane.model.ApiVersion
+
 import io.github.leogallego.ansiblejane.assistant.engine.DebugLog as Log
 import io.github.leogallego.ansiblejane.model.AapComponent
 import io.github.leogallego.ansiblejane.model.InstanceInfo
@@ -23,17 +25,17 @@ import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
 
-class InstanceDiscovery(private val json: Json) {
+class InstanceDiscovery(private val json: Json) : IInstanceDiscovery {
 
     companion object {
         private const val TAG = "InstanceDiscovery"
     }
 
-    suspend fun discover(
+    override suspend fun discover(
         baseUrl: String,
         token: String,
         apiVersion: ApiVersion,
-        trustSelfSigned: Boolean = false
+        trustSelfSigned: Boolean
     ): InstanceInfo {
         val normalizedUrl = baseUrl.trimEnd('/')
         val client = createPlatformHttpClient(trustSelfSigned) {

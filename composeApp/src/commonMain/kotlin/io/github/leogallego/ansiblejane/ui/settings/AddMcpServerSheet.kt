@@ -41,7 +41,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import org.jetbrains.compose.resources.stringResource
 import aapremotecontrol.composeapp.generated.resources.*
-import io.github.leogallego.ansiblejane.network.mcp.popularMcpServers
+import io.github.leogallego.ansiblejane.model.popularMcpServers
 import io.ktor.http.parseUrl
 
 private data class HeaderEntry(val key: String = "", val value: String = "")
