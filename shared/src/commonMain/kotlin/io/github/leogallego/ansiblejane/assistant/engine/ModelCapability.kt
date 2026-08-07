@@ -174,41 +174,78 @@ object ModelCapabilityResolver {
     }
 
     /**
-     * Size / family heuristics for self-hosted model ids.
+     * Size / family heuristics for self-hosted / proxy model ids.
      * Large parameter counts → Full; small/unknown → Simple (conservative).
+     *
+     * Order matters: frontier-name hints run **before** simple markers so Abbenay/CUSTOM
+     * proxies for `gpt-4o-mini` / `o4-mini` stay Full (not tripped by substring "mini").
      */
     internal fun resolveFromModelHints(model: String): ModelCapability {
         val normalized = model.trim().lowercase()
         if (normalized.isEmpty()) return ModelCapability.Simple
 
-        // Explicit small / local family markers (boundary-aware — avoid "2b" matching inside "72b")
-        val simpleFamily = listOf("tiny", "mini", "nano", "phi", "litert", "e2b", "e4b")
-        if (simpleFamily.any { it in normalized }) return ModelCapability.Simple
+        // Frontier model names served via a custom / Abbenay / Ollama proxy — before "mini"/"nano"
+        if (matchesFrontierHint(normalized)) return ModelCapability.Full
+
+        val moeBillions = extractMoeParamBillions(normalized)
+        if (moeBillions != null) {
+            return if (moeBillions >= FULL_PARAM_BILLIONS_THRESHOLD) {
+                ModelCapability.Full
+            } else {
+                ModelCapability.Simple
+            }
+        }
 
         val paramBillions = extractParamBillions(normalized)
         if (paramBillions != null) {
-            // ≥32B class can usually handle richer schemas; below that stay Simple.
-            return if (paramBillions >= 32) ModelCapability.Full else ModelCapability.Simple
+            return if (paramBillions >= FULL_PARAM_BILLIONS_THRESHOLD) {
+                ModelCapability.Full
+            } else {
+                ModelCapability.Simple
+            }
         }
 
-        // Frontier model names served via a custom / Abbenay proxy
-        val frontierHints = listOf(
-            "gpt-4", "gpt-5", "o1", "o3", "o4",
-            "claude", "gemini-2", "gemini-1.5", "gemini-pro",
-            "command-r-plus", "deepseek-v3", "qwen2.5-72b", "qwen3-72b",
-        )
-        if (frontierHints.any { it in normalized }) return ModelCapability.Full
+        // Small / local family markers (after frontier + size, so gpt-4o-mini is not Simple)
+        val simpleFamily = listOf("tiny", "mini", "nano", "phi", "litert", "e2b", "e4b")
+        if (simpleFamily.any { it in normalized }) return ModelCapability.Simple
 
         return ModelCapability.Simple
     }
 
+    /** ≥ this many (approx) billions → Full for self-hosted / MoE heuristics. */
+    internal const val FULL_PARAM_BILLIONS_THRESHOLD = 32
+
+    private val FRONTIER_HINTS = listOf(
+        "gpt-4", "gpt-5", "o1", "o3", "o4",
+        "claude", "gemini-2", "gemini-1.5", "gemini-pro",
+        "command-r-plus", "deepseek-v3", "qwen2.5-72b", "qwen3-72b",
+    )
+
+    internal fun matchesFrontierHint(normalizedModel: String): Boolean =
+        FRONTIER_HINTS.any { it in normalizedModel }
+
     /**
-     * Parses `70b`, `8b`, `120b-a12b`, `llama3.1:70b-instruct-q4` → billions of params.
+     * Parses dense size tags: `70b`, `8b`, `120b-a12b`, `llama3.1:70b-instruct-q4`.
+     * Boundary-aware so `2b` is not matched inside `72b`.
      */
     internal fun extractParamBillions(normalizedModel: String): Int? {
         val match = Regex("""(?:^|[^a-z0-9])(\d{1,3})\s*b(?:[^a-z0-9]|$)""")
             .find(normalizedModel)
             ?: return null
         return match.groupValues[1].toIntOrNull()
+    }
+
+    /**
+     * Parses MoE tags like `mixtral-8x7b` / `8x22b` as experts × expert-size (approx total).
+     * `8x7` → 56, `8x22` → 176 — both ≥ [FULL_PARAM_BILLIONS_THRESHOLD] → Full.
+     */
+    internal fun extractMoeParamBillions(normalizedModel: String): Int? {
+        val match = Regex("""(?:^|[^a-z0-9])(\d{1,3})\s*x\s*(\d{1,3})\s*b(?:[^a-z0-9]|$)""")
+            .find(normalizedModel)
+            ?: return null
+        val experts = match.groupValues[1].toIntOrNull() ?: return null
+        val expertBillions = match.groupValues[2].toIntOrNull() ?: return null
+        if (experts < 2 || expertBillions < 1) return null
+        return experts * expertBillions
     }
 }

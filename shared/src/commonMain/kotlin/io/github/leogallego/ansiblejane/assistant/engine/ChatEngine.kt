@@ -536,8 +536,10 @@ class ChatEngine(
         private const val DEFAULT_CONTEXT_CHARS = 16_000
 
         /**
-         * Detects malformed tool-call / JSON parse failures from providers or serializers (#453).
-         * Auth, timeout, and IO errors are intentionally excluded so they surface normally.
+         * Detects malformed **tool-call** parse failures from providers or serializers (#453).
+         * Requires tool/function-call context so unrelated parse/serialization errors
+         * (URL, config, settings) are not silently retried without tools.
+         * Auth, timeout, server, and IO errors are excluded so they surface normally.
          */
         internal fun isToolCallParseFailure(error: Throwable): Boolean {
             if (error is LlmAuthException ||
@@ -550,15 +552,33 @@ class ChatEngine(
             }
             val msg = (error.message ?: "").lowercase()
             val name = error::class.simpleName?.lowercase() ?: ""
-            if ("serialization" in name || "jsondecoding" in name || "jsonparsing" in name) {
-                return true
-            }
-            if ("parse" in msg || "malformed" in msg) return true
-            if ("tool" in msg && ("json" in msg || "invalid" in msg || "unexpected" in msg)) {
-                return true
-            }
-            return false
+            val hasToolContext = TOOL_CALL_CONTEXT_MARKERS.any { it in msg }
+            if (!hasToolContext) return false
+
+            val looksLikeParse = "parse" in msg ||
+                "malformed" in msg ||
+                "json" in msg ||
+                "invalid" in msg ||
+                "unexpected" in msg ||
+                "serialization" in name ||
+                "jsondecoding" in name ||
+                "jsonparsing" in name
+            return looksLikeParse
         }
+
+        private val TOOL_CALL_CONTEXT_MARKERS = listOf(
+            "tool call",
+            "tool_call",
+            "tool-call",
+            "toolcall",
+            "function call",
+            "function_call",
+            "function-call",
+            "tool argument",
+            "tool arguments",
+            "tool args",
+            "arguments for tool",
+        )
 
         const val SYSTEM_PROMPT = """You are a concise AI assistant for Ansible Automation Platform (AAP). Rules:
 - NEVER fabricate, invent, or guess data. Only present information returned by tool calls. If a tool call fails, report the error — do not make up results. If you have no tool to answer a question, say so clearly.

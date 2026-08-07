@@ -206,7 +206,35 @@ class ChatEngineTest {
             )
         )
     }
+
+    @Test
+    fun `isToolCallParseFailure SHOULD ignore non-tool parse and serialization errors`() {
+        assertFalse(
+            ChatEngine.isToolCallParseFailure(
+                IllegalArgumentException("Failed to parse config file")
+            )
+        )
+        assertFalse(
+            ChatEngine.isToolCallParseFailure(
+                RuntimeException("JSON serialization of settings failed")
+            )
+        )
+        assertFalse(
+            ChatEngine.isToolCallParseFailure(
+                FakeJsonDecodingException("Unexpected token in URL path")
+            )
+        )
+        // Tool context + parse still matches
+        assertTrue(
+            ChatEngine.isToolCallParseFailure(
+                FakeJsonDecodingException("Unexpected token in tool_call arguments")
+            )
+        )
+    }
 }
+
+/** Name ends with JsonDecodingException so simpleName matches the detector's class check. */
+private class FakeJsonDecodingException(message: String) : Exception(message)
 
 private class CapturingLlmProvider : LlmProvider {
     var lastToolNames: List<String> = emptyList()

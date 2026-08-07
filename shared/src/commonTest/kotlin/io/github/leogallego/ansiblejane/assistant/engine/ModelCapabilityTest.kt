@@ -68,6 +68,42 @@ class ModelCapabilityTest {
     }
 
     @Test
+    fun `Abbenay CUSTOM frontier mini nano models SHOULD resolve to Full not Simple`() {
+        // Regression: "mini"/"nano" must not win over frontier name hints
+        assertEquals(
+            ModelCapability.Full,
+            ModelCapabilityResolver.resolve(KnownProvider.ABBENAY, "gpt-4o-mini")
+        )
+        assertEquals(
+            ModelCapability.Full,
+            ModelCapabilityResolver.resolve(KnownProvider.CUSTOM, "o4-mini")
+        )
+        assertEquals(
+            ModelCapability.Full,
+            ModelCapabilityResolver.resolve(KnownProvider.ABBENAY, "openai/gpt-4.1-nano")
+        )
+        // True small local family still Simple
+        assertEquals(
+            ModelCapability.Simple,
+            ModelCapabilityResolver.resolve(KnownProvider.OLLAMA, "phi3:mini")
+        )
+    }
+
+    @Test
+    fun `Mixtral MoE size tags SHOULD resolve to Full on Ollama`() {
+        assertEquals(
+            ModelCapability.Full,
+            ModelCapabilityResolver.resolve(KnownProvider.OLLAMA, "mixtral-8x7b")
+        )
+        assertEquals(
+            ModelCapability.Full,
+            ModelCapabilityResolver.resolve(KnownProvider.OLLAMA, "mixtral:8x22b-instruct")
+        )
+        assertEquals(56, ModelCapabilityResolver.extractMoeParamBillions("mixtral-8x7b"))
+        assertEquals(176, ModelCapabilityResolver.extractMoeParamBillions("mixtral:8x22b-instruct"))
+    }
+
+    @Test
     fun `onDevice flag SHOULD force Simple`() {
         assertEquals(
             ModelCapability.Simple,
