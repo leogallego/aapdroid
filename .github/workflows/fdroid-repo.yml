@@ -1,9 +1,8 @@
 name: Update F-Droid repo
 
+# Triggered explicitly from Build and Release after a successful APK upload
+# (workflow_run misses re-runs after a failed first attempt). Manual dispatch OK.
 on:
-  workflow_run:
-    workflows: ["Build and Release"]
-    types: [completed]
   workflow_dispatch:
 
 permissions:
@@ -18,9 +17,6 @@ concurrency:
 jobs:
   update-repo:
     name: Build and deploy F-Droid repo
-    if: >-
-      github.event_name == 'workflow_dispatch' ||
-      github.event.workflow_run.conclusion == 'success'
     runs-on: ubuntu-latest
     environment:
       name: github-pages
