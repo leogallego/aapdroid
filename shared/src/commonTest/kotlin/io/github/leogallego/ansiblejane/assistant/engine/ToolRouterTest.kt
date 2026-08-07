@@ -1015,20 +1015,25 @@ class ToolRouterTest {
 
     @Test
     fun `SHOULD match both JOBS and MONITORING via keyword status`() {
+        // Production-like descriptions: list_jobs contains "status" so overlap-first must be
+        // per-category — otherwise MONITORING never gets the zero-overlap boost fallback.
         val tools = listOf(
-            localTool("list_jobs"),
-            localTool("get_job"),
-            localTool("list_instances"),
-            localTool("ping"),
-            localTool("list_hosts")
+            localTool("list_jobs", description = "List recent jobs with optional status filter"),
+            localTool("get_job", description = "Get job details by ID"),
+            localTool("list_instances", description = "List controller instances"),
+            localTool("ping", description = "Ping the controller API"),
+            localTool("list_hosts", description = "List hosts, optionally filtered by inventory ID")
         )
         router.registerLocalTools(tools)
 
         val result = router.getToolsForQuery("what is the status").tools
         val names = result.map { it.spec.name }
 
-        assertTrue("list_jobs" in names || "get_job" in names)
-        assertTrue("list_instances" in names || "ping" in names)
+        assertTrue("list_jobs" in names || "get_job" in names, "JOBS tools expected, got $names")
+        assertTrue(
+            "list_instances" in names || "ping" in names,
+            "MONITORING must survive when JOBS already has desc overlap on 'status'; got $names"
+        )
     }
 
     @Test
@@ -2130,5 +2135,55 @@ class ToolRouterTest {
         assertTrue(standard >= saver, "STANDARD=$standard should be >= TOKEN_SAVER=$saver")
         assertTrue(saver <= 3, "TOKEN_SAVER soft top-K expected <= 3, got $saver")
         assertTrue(standard <= 5, "STANDARD soft top-K expected <= 5, got $standard")
+    }
+
+    @Test
+    fun `golden status query with production list_jobs desc SHOULD keep MONITORING tools`() {
+        router.registerLocalTools(
+            listOf(
+                localTool("list_jobs", description = "List recent jobs with optional status filter"),
+                localTool("get_job", description = "Get job details by ID"),
+                localTool("list_instances", description = "List controller instances"),
+                localTool("ping", description = "Ping the controller API"),
+                localTool("get_mesh_topology", description = "Get mesh visualizer topology"),
+                localTool("search_available_tools", description = "Search available tools")
+            )
+        )
+
+        val names = router.getToolsForQuery("what is the status").tools.map { it.spec.name }
+        assertTrue("list_jobs" in names)
+        assertTrue(
+            "list_instances" in names || "ping" in names,
+            "Per-category overlap-first must not drop MONITORING; got $names"
+        )
+        assertFalse("search_available_tools" in names)
+    }
+
+    @Test
+    fun `soft top-K SHOULD prefer routed tools over unrouted when filling budget`() {
+        // Equal-score unrouted tools that sort alphabetically before list_hosts would fill top-K=3
+        // under a naive merged take(); routed-preferring fill must keep list_hosts.
+        val local = listOf(
+            localTool("list_hosts", description = "List hosts in inventory")
+        )
+        val unrouted = (1..6).map { i ->
+            ToolStub(
+                name = "aaa_list_hosts_$i",
+                serverLabel = "cmdb",
+                toolset = null,
+                description = "List hosts in inventory"
+            )
+        }
+        router.registerLocalTools(local)
+        router.registerMcpTools(unrouted)
+
+        val names = router.getToolsForQuery(
+            "how many hosts?",
+            listOf(readWriteConfig),
+            tokenSavingMode = TokenSavingMode.TOKEN_SAVER // top-K = 3
+        ).tools.map { it.spec.name }
+
+        assertTrue("list_hosts" in names, "Routed local tool must not be displaced by unrouted MCP; got $names")
+        assertTrue(names.size <= ToolRouter.TOP_K_TOKEN_SAVER)
     }
 }

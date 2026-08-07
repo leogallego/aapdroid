@@ -598,24 +598,40 @@ class ToolRouter(
         }
 
         Log.d(TAG, "FILTER: ${filteredLocal.size} local, ${routedMcp.size} routed mcp, ${unroutedMcp.size} unrouted mcp")
-        // #330: prefer name/desc overlap for category-routed tools. When any overlaps, list_/get_
-        // boost alone cannot admit zero-overlap siblings (e.g. list_labels for "how many hosts?").
-        // If nothing overlaps, soft top-K fallback keeps category-keyword queries (health/jt/ee)
-        // FN-safe without dumping the whole category. Unrouted MCP always requires overlap.
+        // #330: overlap-first PER matched category, then merge. A JOBS tool whose description
+        // contains "status" must not suppress MONITORING's zero-overlap boost fallback.
+        // Within a category: when any tool overlaps, list_/get_ boost alone cannot admit
+        // zero-overlap siblings (e.g. list_labels). Unrouted MCP always requires overlap.
+        // Soft top-K prefers routed tools so unrouted MCP cannot crowd them out.
         val topK = softTopK(tokenSavingMode)
-        val routedCandidates = filteredLocal + routedMcp
-        val routedOverlap = cherryPickScored(routedCandidates, stemmedQuery, requireOverlap = true)
-        val routedScored = if (routedOverlap.isNotEmpty()) {
-            routedOverlap
-        } else {
-            Log.d(TAG, "CHERRY: zero name/desc overlap on routed — soft top-K category fallback")
-            cherryPickScored(routedCandidates, stemmedQuery, requireOverlap = false)
+        val routedBest = linkedMapOf<String, ScoredTool>()
+        for (category in matchedCategories) {
+            val localForCat = filteredLocal.filter { it.spec.name in category.localToolNames }
+            val mcpForCat = routedMcp.filter { tool ->
+                val cats = tool.toolset?.let { TOOLSET_CATEGORY_MAP[it] }
+                cats != null && category in cats
+            }
+            val candidates = localForCat + mcpForCat
+            if (candidates.isEmpty()) continue
+            val overlap = cherryPickScored(candidates, stemmedQuery, requireOverlap = true)
+            val picked = if (overlap.isNotEmpty()) {
+                overlap
+            } else {
+                Log.d(TAG, "CHERRY: ${category.name} zero overlap — soft boost fallback")
+                cherryPickScored(candidates, stemmedQuery, requireOverlap = false)
+            }
+            for (scored in picked) {
+                val key = toolIdentityKey(scored.tool)
+                val existing = routedBest[key]
+                if (existing == null || scored.score > existing.score) {
+                    routedBest[key] = scored
+                }
+            }
         }
-        val unroutedScored = cherryPickScored(unroutedMcp, stemmedQuery, requireOverlap = true)
-        val cherryPicked = (routedScored + unroutedScored)
+        val routedScored = routedBest.values
             .sortedWith(compareByDescending<ScoredTool> { it.score }.thenBy { it.tool.spec.name })
-            .take(topK)
-            .map { it.tool }
+        val unroutedScored = cherryPickScored(unroutedMcp, stemmedQuery, requireOverlap = true)
+        val cherryPicked = fillTopKPreferringRouted(routedScored, unroutedScored, topK)
         Log.d(TAG, "CHERRY: ${cherryPicked.size}/$topK tools [${cherryPicked.map { it.spec.name }}]")
 
         if (cherryPicked.isEmpty()) {
@@ -629,6 +645,31 @@ class ToolRouter(
 
         QueryResult(cherryPicked, categoryMatched = true)
     }
+
+    /** Prefer category-routed tools when filling soft top-K; unrouted fills remaining slots only. */
+    private fun fillTopKPreferringRouted(
+        routedScored: List<ScoredTool>,
+        unroutedScored: List<ScoredTool>,
+        topK: Int
+    ): List<Tool> {
+        if (topK <= 0) return emptyList()
+        val result = ArrayList<Tool>(topK)
+        val seen = HashSet<String>()
+        for (scored in routedScored) {
+            if (result.size >= topK) break
+            val key = toolIdentityKey(scored.tool)
+            if (seen.add(key)) result.add(scored.tool)
+        }
+        for (scored in unroutedScored) {
+            if (result.size >= topK) break
+            val key = toolIdentityKey(scored.tool)
+            if (seen.add(key)) result.add(scored.tool)
+        }
+        return result
+    }
+
+    private fun toolIdentityKey(tool: Tool): String =
+        "${tool.spec.name}\u0000${tool.serverLabel ?: ""}\u0000${if (tool is LocalTool) "L" else "M"}"
 
     /**
      * Search all enabled tools by name + description tokens (meta-search / #120).
