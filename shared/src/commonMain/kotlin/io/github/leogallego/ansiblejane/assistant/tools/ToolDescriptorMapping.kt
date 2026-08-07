@@ -3,6 +3,7 @@ package io.github.leogallego.ansiblejane.assistant.tools
 import ai.koog.agents.core.tools.ToolDescriptor
 import ai.koog.agents.core.tools.ToolParameterDescriptor
 import ai.koog.agents.core.tools.ToolParameterType
+import io.github.leogallego.ansiblejane.assistant.data.TokenSavingMode
 import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonObject
@@ -10,7 +11,24 @@ import kotlinx.serialization.json.jsonArray
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
 
-fun ToolSpec.toToolDescriptor(): ToolDescriptor {
+/**
+ * How much JSON Schema detail to send to the LLM for each tool (#330).
+ * FULL ≈ STANDARD; STRIPPED ≈ TOKEN_SAVER (required params kept, optionals folded into description).
+ * Minimal/lazy full-schema (TOOLS_ONLY 2-call path) is deferred.
+ */
+enum class SchemaCompressionLevel {
+    FULL,
+    STRIPPED
+}
+
+fun TokenSavingMode.toSchemaCompression(): SchemaCompressionLevel = when (this) {
+    TokenSavingMode.STANDARD -> SchemaCompressionLevel.FULL
+    TokenSavingMode.TOKEN_SAVER, TokenSavingMode.TOOLS_ONLY -> SchemaCompressionLevel.STRIPPED
+}
+
+fun ToolSpec.toToolDescriptor(
+    compression: SchemaCompressionLevel = SchemaCompressionLevel.FULL
+): ToolDescriptor {
     val schema = compactSchema(parametersSchema)
     val properties = schema["properties"]?.jsonObject ?: emptyMap()
     val requiredNames = schema["required"]?.jsonArray
@@ -18,6 +36,7 @@ fun ToolSpec.toToolDescriptor(): ToolDescriptor {
 
     val required = mutableListOf<ToolParameterDescriptor>()
     val optional = mutableListOf<ToolParameterDescriptor>()
+    val optionalNames = mutableListOf<String>()
 
     properties.forEach { (paramName, paramValue) ->
         val prop = paramValue.jsonObject
@@ -26,12 +45,25 @@ fun ToolSpec.toToolDescriptor(): ToolDescriptor {
             description = prop["description"]?.jsonPrimitive?.content ?: paramName,
             type = parseParamType(prop)
         )
-        if (paramName in requiredNames) required.add(descriptor) else optional.add(descriptor)
+        if (paramName in requiredNames) {
+            required.add(descriptor)
+        } else {
+            optionalNames.add(paramName)
+            if (compression == SchemaCompressionLevel.FULL) {
+                optional.add(descriptor)
+            }
+        }
+    }
+
+    val finalDescription = when {
+        compression == SchemaCompressionLevel.STRIPPED && optionalNames.isNotEmpty() ->
+            "$description. Optional: ${optionalNames.joinToString(", ")}"
+        else -> description
     }
 
     return ToolDescriptor(
         name = name,
-        description = description,
+        description = finalDescription,
         requiredParameters = required,
         optionalParameters = optional
     )

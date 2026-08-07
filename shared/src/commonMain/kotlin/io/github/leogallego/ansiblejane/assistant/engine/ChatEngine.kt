@@ -11,8 +11,10 @@ import io.github.leogallego.ansiblejane.assistant.llm.LlmProvider
 import io.github.leogallego.ansiblejane.assistant.llm.LlmRateLimitException
 import io.github.leogallego.ansiblejane.assistant.llm.LlmServerException
 import io.github.leogallego.ansiblejane.assistant.llm.LlmTimeoutException
+import io.github.leogallego.ansiblejane.assistant.data.TokenSavingMode
 import io.github.leogallego.ansiblejane.assistant.engine.DebugLog as Log
 import io.github.leogallego.ansiblejane.assistant.tools.ToolSpec
+import io.github.leogallego.ansiblejane.assistant.tools.toSchemaCompression
 import io.github.leogallego.ansiblejane.assistant.tools.toToolDescriptor
 import kotlin.coroutines.cancellation.CancellationException
 import kotlinx.coroutines.ensureActive
@@ -54,7 +56,9 @@ class ChatEngine(
         tools: List<ToolSpec>,
         maxTokens: Int? = null,
         contextChars: Int = DEFAULT_CONTEXT_CHARS,
-        onConfirmationRequired: (suspend (toolName: String, description: String, args: JsonObject) -> Boolean)? = null
+        onConfirmationRequired: (suspend (toolName: String, description: String, args: JsonObject) -> Boolean)? = null,
+        /** #330: STANDARD keeps full schemas; TOKEN_SAVER strips optional param detail. */
+        tokenSavingMode: TokenSavingMode = TokenSavingMode.STANDARD
     ): Flow<ChatEvent> = flow {
         var accInputTokens = 0
         var accOutputTokens = 0
@@ -68,9 +72,11 @@ class ChatEngine(
                 .forEach { messages.add(it) }
 
             // #439: stable alphabetical order so LLM KV/prefix caches can reuse tool schemas
+            // #330: schema compression by TokenSavingMode
+            val compression = tokenSavingMode.toSchemaCompression()
             val toolDescriptors = tools
                 .sortedBy { it.name }
-                .map { it.toToolDescriptor() }
+                .map { it.toToolDescriptor(compression) }
             val toolSchemaChars = toolDescriptors.sumOf {
                 it.name.length + it.description.length +
                     it.requiredParameters.sumOf { p -> p.name.length + p.description.length + 20 } +
@@ -78,7 +84,8 @@ class ChatEngine(
             }
             val msgChars = messages.sumOf { it.content.length }
             Log.d(TAG, "PAYLOAD: ${tools.size} tools (~${toolSchemaChars} schema chars), " +
-                "${messages.size} messages (~${msgChars} msg chars), total ~${toolSchemaChars + msgChars} chars")
+                "${messages.size} messages (~${msgChars} msg chars), mode=$tokenSavingMode/$compression, " +
+                "total ~${toolSchemaChars + msgChars} chars")
             Log.d(TAG, "PAYLOAD tools: ${tools.map { it.name }}")
             var iterations = 0
             var totalToolCalls = 0
