@@ -63,10 +63,15 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
 
-      - name: Copy repo icon
+      # fdroidserver resolves repo_icon relative to the fdroid/ cwd (config value
+      # "icon.png" → fdroid/icon.png). If missing, `fdroid update` generates a
+      # placeholder and overwrites repo/icons/icon.png.
+      - name: Install repo and app icons
         run: |
-          mkdir -p fdroid/repo/icons
-          cp fastlane/metadata/android/en-US/images/icon.png fdroid/repo/icons/icon.png
+          cp fastlane/metadata/android/en-US/images/icon.png fdroid/icon.png
+          mkdir -p fdroid/metadata/io.github.leogallego.ansiblejane/en-US/images
+          cp fastlane/metadata/android/en-US/images/icon.png \
+            fdroid/metadata/io.github.leogallego.ansiblejane/en-US/images/icon.png
 
       - name: Create app metadata
         run: |
