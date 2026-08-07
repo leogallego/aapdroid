@@ -1,6 +1,7 @@
 package io.github.leogallego.ansiblejane.assistant.engine
 
 import io.github.leogallego.ansiblejane.TestOnly
+import io.github.leogallego.ansiblejane.assistant.data.TokenSavingMode
 import io.github.leogallego.ansiblejane.assistant.tools.Tool
 import io.github.leogallego.ansiblejane.assistant.tools.ToolStub
 import io.github.leogallego.ansiblejane.assistant.tools.LocalTool
@@ -73,16 +74,17 @@ class ToolRouterTest {
 
     @Test
     fun `SHOULD select inventory tools WHEN query mentions hosts`() {
-        val inventoryLocal = localTool("list_hosts")
-        val inventoryLocal2 = localTool("list_inventories")
-        val jobLocal = localTool("list_jobs")
+        val inventoryLocal = localTool("list_hosts", description = "List hosts in inventory")
+        val inventoryLocal2 = localTool("list_inventories", description = "List inventories")
+        val jobLocal = localTool("list_jobs", description = "List jobs")
 
         router.registerLocalTools(listOf(inventoryLocal, inventoryLocal2, jobLocal))
         val result = router.getToolsForQuery("list my hosts").tools
         val names = result.map { it.spec.name }
 
         assertTrue("list_hosts" in names)
-        assertTrue("list_inventories" in names)
+        // #330: list_inventories has no name/desc overlap with "hosts" — do not admit via list_ boost
+        assertFalse("list_inventories" in names)
         assertFalse("list_jobs" in names)
     }
 
@@ -296,7 +298,8 @@ class ToolRouterTest {
         val names = result.map { it.spec.name }
 
         assertTrue("hosts_list" in names)
-        assertTrue("inventories_list" in names)
+        // #330: inventories_list has no name/desc overlap with "hosts" once hosts_list matches
+        assertFalse("inventories_list" in names)
         assertFalse("hosts_create" in names)
         assertFalse("hosts_update" in names)
         assertFalse("hosts_delete" in names)
@@ -365,7 +368,8 @@ class ToolRouterTest {
         val names = result.map { it.spec.name }
 
         assertTrue("hosts_list" in names)
-        assertTrue("groups_list" in names)
+        // #330: groups_list no longer admitted via list_ boost alone when hosts_list overlaps
+        assertFalse("groups_list" in names)
         assertFalse("jobs_retrieve" in names)
         assertFalse("users_list" in names)
     }
@@ -422,7 +426,8 @@ class ToolRouterTest {
 
         assertTrue("users_list" in names)
         assertTrue("teams_list" in names)
-        assertTrue("organizations_list" in names)
+        // #330: organizations_list has no user/team overlap once users/teams match
+        assertFalse("organizations_list" in names)
         assertFalse("hosts_list" in names)
     }
 
@@ -456,7 +461,8 @@ class ToolRouterTest {
 
         assertTrue("settings_retrieve" in names)
         assertTrue("projects_list" in names)
-        assertTrue("notification_templates_list" in names)
+        // #330: notification_templates_list has no project/settings overlap
+        assertFalse("notification_templates_list" in names)
         assertFalse("hosts_list" in names)
     }
 
@@ -630,7 +636,8 @@ class ToolRouterTest {
         assertTrue("list_instances" in names)
         assertTrue("get_instance" in names)
         assertTrue("list_instance_groups" in names)
-        assertTrue("ping" in names)
+        // #330: ping has no "instance" overlap once instance tools match
+        assertFalse("ping" in names)
         assertFalse("list_hosts" in names)
     }
 
@@ -772,7 +779,8 @@ class ToolRouterTest {
         val names = result.map { it.spec.name }
 
         assertTrue("get_mesh_topology" in names)
-        assertTrue("list_instances" in names)
+        // #330: list_instances has no mesh/topology overlap once get_mesh_topology matches
+        assertFalse("list_instances" in names)
         assertFalse("list_hosts" in names)
     }
 
@@ -1026,16 +1034,17 @@ class ToolRouterTest {
     @Test
     fun `SHOULD match both INVENTORY and MONITORING via keyword group`() {
         val tools = listOf(
-            localTool("list_hosts"),
-            localTool("list_inventories"),
-            localTool("list_instance_groups")
+            localTool("list_groups", description = "List groups in an inventory"),
+            localTool("list_inventories", description = "List inventories"),
+            localTool("list_instance_groups", description = "List instance groups")
         )
         router.registerLocalTools(tools)
 
         val result = router.getToolsForQuery("show groups").tools
         val names = result.map { it.spec.name }
 
-        assertTrue(names.size >= 2)
+        assertTrue("list_groups" in names || "list_instance_groups" in names)
+        assertTrue(names.size >= 2, "Expected inventory + monitoring group tools, got $names")
     }
 
     // --- Cherry-pick tests ---
@@ -1083,22 +1092,24 @@ class ToolRouterTest {
     }
 
     @Test
-    fun `SHOULD fallback to list tools WHEN no cherry-pick overlap`() {
+    fun `SHOULD soft top-K category fallback WHEN category matches but no name or desc overlap`() {
+        // Category keyword "healthy" matches MONITORING; tool names/descs have no overlap.
+        // Pre-#330 admitted the whole category via list_/ping boost; now soft top-K only.
         val tools = listOf(
-            localTool("list_instances"),
-            localTool("get_instance"),
-            localTool("list_instance_groups"),
-            localTool("ping"),
-            localTool("get_mesh_topology")
+            localTool("list_instances", description = "List controller instances"),
+            localTool("get_instance", description = "Get a controller instance by ID"),
+            localTool("list_instance_groups", description = "List instance groups"),
+            localTool("ping", description = "Ping the controller API"),
+            localTool("get_mesh_topology", description = "Get mesh visualizer topology")
         )
         router.registerLocalTools(tools)
 
-        val result = router.getToolsForQuery("is everything healthy?").tools
-        val names = result.map { it.spec.name }
-
-        assertTrue("list_instances" in names)
-        assertTrue("list_instance_groups" in names)
-        assertTrue("ping" in names)
+        val result = router.getToolsForQuery("is everything healthy?")
+        val names = result.tools.map { it.spec.name }
+        assertTrue(result.categoryMatched)
+        assertTrue(names.isNotEmpty())
+        assertTrue(names.size <= ToolRouter.TOP_K_STANDARD)
+        assertTrue("list_instances" in names || "ping" in names)
     }
 
     @Test
@@ -1184,7 +1195,11 @@ class ToolRouterTest {
         val names = result.map { it.spec.name }
 
         assertTrue("list_platform_services" in names)
-        assertTrue("list_service_clusters" in names)
+        // Soft top-K may drop lower-scoring platform siblings; service_clusters still ranks on "services"
+        assertTrue(
+            "list_service_clusters" in names || names.any { it.startsWith("list_platform_") },
+            "Expected platform/service tools in soft top-K, got $names"
+        )
         assertFalse("list_hosts" in names)
     }
 
@@ -2020,5 +2035,100 @@ class ToolRouterTest {
                 "$name unexpectedly matches WRITE_SUFFIXES — remove from DESTRUCTIVE_LOCAL_TOOL_NAMES"
             )
         }
+    }
+
+    // --- #330 golden queries: require name/desc overlap (no list_/get_ boost-only leakage) ---
+
+    private fun inventoryFixtureTools() = listOf(
+        localTool("list_inventories", description = "List inventories with optional search filter"),
+        localTool("list_hosts", description = "List hosts, optionally filtered by inventory ID or search term"),
+        localTool("get_host_facts", description = "Get Ansible facts for a specific host by ID"),
+        localTool("get_host_job_summaries", description = "Get job host summaries for a host"),
+        localTool("list_groups", description = "List groups in an inventory"),
+        localTool("list_inventory_sources", description = "List inventory sources"),
+        localTool("list_labels", description = "List labels used for tagging templates and other resources"),
+        localTool("search_available_tools", description = "Search available tools by name or description")
+    )
+
+    @Test
+    fun `golden how many hosts SHOULD include list_hosts and exclude zero-overlap list_labels`() {
+        router.registerLocalTools(inventoryFixtureTools())
+
+        val names = router.getToolsForQuery("how many hosts?").tools.map { it.spec.name }
+
+        assertTrue("list_hosts" in names)
+        assertFalse(
+            "list_labels" in names,
+            "list_labels must not enter via list_ boost alone (zero name/desc overlap with hosts)"
+        )
+    }
+
+    @Test
+    fun `golden host facts query SHOULD keep get_host_facts reachable under soft top-K`() {
+        router.registerLocalTools(inventoryFixtureTools())
+
+        val names = router.getToolsForQuery("host facts for web01").tools.map { it.spec.name }
+
+        assertTrue("get_host_facts" in names, "get_host_facts must not be dropped by soft top-K")
+        assertTrue(names.size <= 5, "STANDARD soft top-K should keep candidate set small, got ${names.size}")
+    }
+
+    @Test
+    fun `golden broad inventory query SHOULD return multiple list tools when overlap justifies`() {
+        router.registerLocalTools(inventoryFixtureTools())
+
+        val names = router.getToolsForQuery("show inventory hosts and groups").tools.map { it.spec.name }
+        val listTools = names.filter { it.startsWith("list_") && it != "list_labels" }
+
+        assertTrue(
+            listTools.size >= 2,
+            "Expected multiple overlapping list_ tools, got $names"
+        )
+        assertTrue("list_hosts" in names)
+        assertTrue("list_groups" in names || "list_inventories" in names)
+    }
+
+    @Test
+    fun `golden trivial and discovery paths SHOULD remain unchanged`() {
+        val search = localTool("search_available_tools", description = "Search available tools")
+        val hosts = localTool("list_hosts", description = "List inventory hosts")
+        router.registerLocalTools(listOf(search, hosts))
+
+        val greeting = router.getToolsForQuery("hello")
+        assertFalse(greeting.categoryMatched)
+        assertTrue(greeting.tools.isEmpty())
+
+        val discovery = router.getToolsForQuery("what can you do?")
+        assertFalse(discovery.categoryMatched)
+        assertEquals(listOf("search_available_tools"), discovery.tools.map { it.spec.name })
+    }
+
+    @Test
+    fun `category match with some overlap SHOULD not admit zero-overlap siblings via list_ boost`() {
+        // Contrasts with zero-overlap soft fallback: once list_hosts matches, list_labels stays out
+        router.registerLocalTools(inventoryFixtureTools())
+
+        val names = router.getToolsForQuery("how many hosts?").tools.map { it.spec.name }.toSet()
+        assertTrue("list_hosts" in names)
+        assertFalse("list_labels" in names)
+        assertFalse("list_inventory_sources" in names)
+    }
+
+    @Test
+    fun `TOKEN_SAVER soft top-K SHOULD be tighter than STANDARD`() {
+        router.registerLocalTools(inventoryFixtureTools())
+
+        val standard = router.getToolsForQuery(
+            "show inventory hosts and groups and facts and sources",
+            tokenSavingMode = TokenSavingMode.STANDARD
+        ).tools.size
+        val saver = router.getToolsForQuery(
+            "show inventory hosts and groups and facts and sources",
+            tokenSavingMode = TokenSavingMode.TOKEN_SAVER
+        ).tools.size
+
+        assertTrue(standard >= saver, "STANDARD=$standard should be >= TOKEN_SAVER=$saver")
+        assertTrue(saver <= 3, "TOKEN_SAVER soft top-K expected <= 3, got $saver")
+        assertTrue(standard <= 5, "STANDARD soft top-K expected <= 5, got $standard")
     }
 }

@@ -207,8 +207,8 @@ class AssistantViewModel(
             toolRouter.registerMcpTools(mcpTools)
 
             Log.d(TAG, "ROUTE: query=\"$text\", ${localTools.size} local, ${mcpTools.size} mcp, role=$aapRole")
-            val queryResult = toolRouter.getToolsForQuery(text, serverConfigs, aapRole)
             val mode = config.tokenSavingMode
+            val queryResult = toolRouter.getToolsForQuery(text, serverConfigs, aapRole, mode)
             Log.d(TAG, "ROUTE: categoryMatched=${queryResult.categoryMatched}, " +
                 "${queryResult.tools.size} tools selected, mode=$mode")
 
@@ -290,7 +290,8 @@ class AssistantViewModel(
                     val result = deferred.await()
                     updateState { copy(pendingConfirmation = null) }
                     result
-                }
+                },
+                tokenSavingMode = mode
             ).collect { event ->
                     when (event) {
                         is ChatEvent.TextDelta -> {

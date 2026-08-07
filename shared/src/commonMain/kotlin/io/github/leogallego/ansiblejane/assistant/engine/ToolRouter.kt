@@ -2,6 +2,7 @@ package io.github.leogallego.ansiblejane.assistant.engine
 
 import io.github.leogallego.ansiblejane.TestOnly
 import io.github.leogallego.ansiblejane.assistant.data.IAssistantRepository
+import io.github.leogallego.ansiblejane.assistant.data.TokenSavingMode
 import io.github.leogallego.ansiblejane.assistant.engine.DebugLog as Log
 import io.github.leogallego.ansiblejane.assistant.tools.LocalTool
 import io.github.leogallego.ansiblejane.assistant.tools.Tool
@@ -314,6 +315,15 @@ class ToolRouter(
         /** Cap for meta-search results returned into the LLM tool list. */
         const val MAX_META_SEARCH_RESULTS = 20
 
+        /** Soft top-K for category-matched tools (#330). Generous enough to avoid hard top-1 FNs. */
+        const val TOP_K_STANDARD = 5
+        const val TOP_K_TOKEN_SAVER = 3
+
+        fun softTopK(mode: TokenSavingMode): Int = when (mode) {
+            TokenSavingMode.STANDARD -> TOP_K_STANDARD
+            TokenSavingMode.TOKEN_SAVER, TokenSavingMode.TOOLS_ONLY -> TOP_K_TOKEN_SAVER
+        }
+
         /** Synonym expansion applied to query tokens before stemming (#120 Tier 1). */
         val SYNONYMS = mapOf(
             "playbook" to setOf("job", "template"),
@@ -530,12 +540,14 @@ class ToolRouter(
         query: String,
         serverConfigs: List<McpServerConfig> = emptyList(),
         /** Default OPERATOR for callers that omit role; pass explicit role from the active instance. Unknown/`null` fail-closes. */
-        aapRole: AapRole? = AapRole.OPERATOR
+        aapRole: AapRole? = AapRole.OPERATOR,
+        /** Soft top-K after overlap scoring (#330). STANDARD stays slightly generous. */
+        tokenSavingMode: TokenSavingMode = TokenSavingMode.STANDARD
     ): QueryResult = synchronized(this) {
         lastRoutingContext = RoutingContext(serverConfigs, aapRole)
         val queryWords = tokenizeQuery(query)
         val stemmedQuery = stemQueryTokens(queryWords)
-        Log.d(TAG, "QUERY: words=$queryWords, stemmed=$stemmedQuery, role=$aapRole")
+        Log.d(TAG, "QUERY: words=$queryWords, stemmed=$stemmedQuery, role=$aapRole, mode=$tokenSavingMode")
 
         val matchedCategories = Category.entries.filter { category ->
             category.stemmedKeywords.any { it in stemmedQuery }
@@ -586,14 +598,36 @@ class ToolRouter(
         }
 
         Log.d(TAG, "FILTER: ${filteredLocal.size} local, ${routedMcp.size} routed mcp, ${unroutedMcp.size} unrouted mcp")
-        val cherryPickedLocal = cherryPick(filteredLocal, stemmedQuery)
-        val cherryPickedRouted = cherryPick(routedMcp, stemmedQuery)
-        val cherryPickedUnrouted = cherryPick(unroutedMcp, stemmedQuery, requireOverlap = true)
-        val allCherryPicked = cherryPickedLocal + cherryPickedRouted + cherryPickedUnrouted
-        Log.d(TAG, "CHERRY: ${cherryPickedLocal.size} local, ${cherryPickedRouted.size} routed, " +
-            "${cherryPickedUnrouted.size} unrouted [${allCherryPicked.map { it.spec.name }}]")
+        // #330: prefer name/desc overlap for category-routed tools. When any overlaps, list_/get_
+        // boost alone cannot admit zero-overlap siblings (e.g. list_labels for "how many hosts?").
+        // If nothing overlaps, soft top-K fallback keeps category-keyword queries (health/jt/ee)
+        // FN-safe without dumping the whole category. Unrouted MCP always requires overlap.
+        val topK = softTopK(tokenSavingMode)
+        val routedCandidates = filteredLocal + routedMcp
+        val routedOverlap = cherryPickScored(routedCandidates, stemmedQuery, requireOverlap = true)
+        val routedScored = if (routedOverlap.isNotEmpty()) {
+            routedOverlap
+        } else {
+            Log.d(TAG, "CHERRY: zero name/desc overlap on routed — soft top-K category fallback")
+            cherryPickScored(routedCandidates, stemmedQuery, requireOverlap = false)
+        }
+        val unroutedScored = cherryPickScored(unroutedMcp, stemmedQuery, requireOverlap = true)
+        val cherryPicked = (routedScored + unroutedScored)
+            .sortedWith(compareByDescending<ScoredTool> { it.score }.thenBy { it.tool.spec.name })
+            .take(topK)
+            .map { it.tool }
+        Log.d(TAG, "CHERRY: ${cherryPicked.size}/$topK tools [${cherryPicked.map { it.spec.name }}]")
 
-        QueryResult(allCherryPicked, categoryMatched = true)
+        if (cherryPicked.isEmpty()) {
+            val meta = findMetaSearchTool(aapRole)
+            if (meta != null) {
+                Log.d(TAG, "META: category match but empty cherry-pick — inject ${meta.spec.name}")
+                return@synchronized QueryResult(listOf(meta), categoryMatched = true)
+            }
+            return@synchronized QueryResult(emptyList(), categoryMatched = true)
+        }
+
+        QueryResult(cherryPicked, categoryMatched = true)
     }
 
     /**
@@ -718,7 +752,13 @@ class ToolRouter(
         tools: List<Tool>,
         stemmedQuery: Set<String>,
         requireOverlap: Boolean = false
-    ): List<Tool> {
+    ): List<Tool> = cherryPickScored(tools, stemmedQuery, requireOverlap).map { it.tool }
+
+    private fun cherryPickScored(
+        tools: List<Tool>,
+        stemmedQuery: Set<String>,
+        requireOverlap: Boolean = false
+    ): List<ScoredTool> {
         val scored = tools.map { tool ->
             val nameParts = tool.spec.name
                 .split(".", "_")
@@ -745,7 +785,6 @@ class ToolRouter(
             .filter { it.score > 0 && (!requireOverlap || it.overlap > 0) }
             // #439: secondary sort by name for stable KV-cache-friendly ordering
             .sortedWith(compareByDescending<ScoredTool> { it.score }.thenBy { it.tool.spec.name })
-            .map { it.tool }
     }
 
     fun getAllRegisteredTools(): List<Pair<Tool, ToolSource>> = synchronized(this) {
