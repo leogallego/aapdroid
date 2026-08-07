@@ -13,8 +13,8 @@ Delivery is **one design, two sequential PRs**:
 
 | PR | Scope |
 |----|--------|
-| **PR1 — E4B MVP** | Gradle deps, platform resources, model download + SHA-256, engine lifecycle, `LocalLlmProvider` sync/manual tool path via existing `LlmProvider` + ChatEngine, Settings UI, `onDevice=true` |
-| **PR2 — Dual-path + 12B** | Async streaming + auto tool calling for read-only, `OpenApiTool` adapters, path switch on destructive tools, 12B MCP policy |
+| **PR1 — E4B MVP** | Gradle deps, platform resources, model download + SHA-256, engine lifecycle, `LocalLlmProvider` sync/manual tool path via existing `LlmProvider` + ChatEngine, Settings UI, `onDevice=true` → `Simple` (E4B **and** 12B use the same Simple policy in PR1) |
+| **PR2 — Dual-path + 12B** | Async streaming + auto tool calling for read-only, `OpenApiTool` adapters, path switch on destructive tools, **extend #453** so 12B is not forced into Simple’s no-MCP / TOOLS_ONLY ceiling |
 
 A second agent may own PR2 **after** PR1 interfaces land; do not parallelize both from day one.
 
@@ -85,8 +85,8 @@ UI (AgentTab — local provider card, download progress)
 | `LlmProvider` (unchanged) | `shared/.../llm/LlmProvider.kt` |
 | Local provider factory / expect | `shared/commonMain/.../llm/` |
 | LiteRT actual + StreamFrame bridge | `shared/androidMain` + `shared/jvmMain` |
-| `ILocalModelRepository` / `LocalModelRepository` | `shared/.../assistant/data/` (or `assistant/local/`) |
-| `LocalModelCatalog` | `shared/commonMain` — pure data |
+| `ILocalModelRepository` / `LocalModelRepository` | `shared/.../assistant/local/` |
+| `LocalModelCatalog` | `shared/commonMain/.../assistant/local/` — pure data |
 | `DeviceResources` expect/actual | `shared/.../platform/` |
 | `LlmProviderConfig.OnDevice` + `KnownProvider.LOCAL` | `AssistantConfig.kt` / `LlmProviderDefinitions.kt` |
 | DI | `sharedAssistantModule` + platform modules |
@@ -110,9 +110,19 @@ Two models only (E2B dropped — unreliable for AAP function calling):
 | Medium (minimum) | Gemma 4 E4B IT | Default / MVP |
 | Large (recommended) | Gemma 4 12B IT | PR2 MCP + richer agentic |
 
-Each catalog entry includes: `id`, display name, file name, `sizeBytes`, **pinned HF commit URL**, **SHA-256**, `gpuMemoryMb`, `defaultContextTokens`, `maxContextTokens`, `kvPerTokenBytes`.
+Each catalog entry includes: `id`, display name, file name, `sizeBytes`, **pinned HF commit URL**, **SHA-256**, `gpuMemoryMb`, `defaultContextTokens`, `maxContextTokens`, `kvPerTokenBytes`, and `onDeviceTier` (`E4B` | `LARGE`).
+
+GPU memory estimate (Kai / issue formula):
+
+```text
+estimateGpuMemoryMb = modelFileMb + gpuMemoryMb
+  + max(0, contextTokens - defaultContextTokens) * kvPerTokenBytes / 1MiB
+DevicePerformance: GOOD ≥ 2.5× RAM headroom, OK ≥ 1.85×, else POOR
+```
 
 ### Repository API
+
+Download progress is **transient**; on-disk readiness is queried separately (do not overload one sealed type for both).
 
 ```kotlin
 interface ILocalModelRepository {
@@ -121,15 +131,17 @@ interface ILocalModelRepository {
     fun isReady(modelId: String): Boolean
     fun modelPath(modelId: String): String?
     suspend fun download(modelId: String)
+    fun cancelDownload()
     suspend fun delete(modelId: String)
     fun devicePerformance(modelId: String, contextTokens: Int): DevicePerformance
     fun hasAvx2Support(): Boolean
 }
 
+/** Transient download machine. After success or idle, use [ILocalModelRepository.isReady]. */
 sealed interface LocalModelDownloadState {
     data object Idle : LocalModelDownloadState
     data class Downloading(val modelId: String, val bytesReceived: Long, val totalBytes: Long) : LocalModelDownloadState
-    data class Ready(val modelId: String) : LocalModelDownloadState
+    data class Succeeded(val modelId: String) : LocalModelDownloadState  // then typically return to Idle
     data class Error(val modelId: String, val message: String) : LocalModelDownloadState
 }
 
@@ -146,7 +158,7 @@ enum class DevicePerformance { GOOD, OK, POOR }
 
 - Require free space ≥ `sizeBytes + 500 MB` before start  
 - Streaming SHA-256; mismatch → delete partial file + `Error`  
-- Progress exposed on `downloadState`  
+- Progress exposed on `downloadState`; support `cancelDownload()`  
 - Android may show a foreground download notification; desktop has no notification parity  
 
 ### Config & capability
@@ -160,10 +172,12 @@ data class OnDevice(
 ) : LlmProviderConfig
 ```
 
-- `KnownProvider.LOCAL` — no API key, URL not editable  
-- `ModelCapabilityResolver.resolve(..., onDevice = true)` → always `Simple`  
-- Effective mode ceiling remains TOOLS_ONLY for Simple (#453)  
+- `KnownProvider.LOCAL` — no API key, URL not editable. `AssistantViewModel` must branch on `OnDevice` **before** `KnownProvider.fromUrl` (OnDevice has no URL).  
+- Register the new polymorphic serializer subtype so existing `OpenAiCompatible` configs keep deserializing.  
+- **PR1:** `resolve(..., onDevice = true)` → always `Simple` for every on-device model (including 12B if downloaded). Matches #453 today.  
+- **PR2 must extend #453** — see [12B policy vs Simple](#12b-policy-vs-453-simple). Until that lands, 12B must not claim MCP / TOKEN_SAVER behavior.  
 - Device tier UI: show GOOD/OK/POOR; **block download only on insufficient disk**; POOR is a warning  
+- **Context budget:** when active provider is OnDevice, set ChatEngine `contextChars` from the catalog model’s `defaultContextTokens` (approx chars ≈ tokens for MVP, or tokens×4 if we keep char-based trim) so E4B stays near 4K and 12B near 8K — do not leave cloud TOOLS_ONLY’s 4K-char budget as the only knob once LARGE is active in PR2.
 
 ## PR1 — Inference bridge (sync / manual)
 
@@ -176,6 +190,7 @@ data class OnDevice(
 5. Idle release after 5 minutes; 750 ms GPU drain between model swaps  
 6. `modelInfo()` → `ModelInfo(name = modelId, isLocal = true)`  
 7. `isAvailable()` → model file ready and (desktop) AVX2 OK  
+8. Expose lightweight engine phase for Settings/Assistant (`Uninitialized` / `Loading` / `Ready` / `Error`) via `StateFlow` on the provider or repository — `isAvailable()` alone is not enough for “Loading model…” UI  
 
 ### Tool mode (PR1 only)
 
@@ -198,7 +213,8 @@ ChatEngine then owns: destructive confirmation → `ToolExecutor` → tool resul
 
 - Map Koog `Prompt` → LiteRT messages (system → `systemInstruction`; user/assistant history; tool results flattened Kai-style)  
 - Run `sanitizeForLiteRt` on all strings (strip UTF-16 surrogates — JNI/UTF-8 crash avoidance)  
-- Register tool **descriptions** on the conversation so the model can emit structured calls, but do **not** attach `OpenApiTool.execute` in PR1 — Jane executes via ChatEngine  
+- Register tool schemas on the conversation so the model can emit structured calls, but do **not** run Jane tools inside LiteRT in PR1 — ChatEngine executes  
+- **Prototype risk:** confirm whether LiteRT accepts schema-only / no-op `OpenApiTool` entries when `automaticToolCalling = false`, or whether descriptions must be supplied another way. Spike early in PR1; if execute stubs are required, stubs must throw if invoked (should be unreachable with auto-calling off)  
 - Schemas are already #330-stripped upstream when mode/capability demand it  
 
 ### ViewModel wiring
@@ -226,14 +242,15 @@ Map timeout / OOM / engine failures to existing LLM exceptions only (`LlmTimeout
 
 ### Path selection (inside `LocalLlmProvider`)
 
-`LlmProvider.generateStream` only receives Koog `ToolDescriptor`s (no `isDestructive`). For PR2, inject a `DestructiveToolLookup` at provider construction (backed by the local/MCP tool registry already known to DI):
+`LlmProvider.generateStream` only receives Koog `ToolDescriptor`s (no `isDestructive`). For PR2, inject a `DestructiveToolLookup` **instance** at provider construction (backed by the local/MCP tool registry already known to DI):
 
 ```kotlin
 fun interface DestructiveToolLookup {
     fun isDestructive(toolName: String): Boolean
 }
 
-val hasDestructive = tools.any { DestructiveToolLookup.isDestructive(it.name) }
+// lookup: DestructiveToolLookup injected into LocalLlmProvider
+val hasDestructive = tools.any { lookup.isDestructive(it.name) }
 if (tools.isEmpty() || !hasDestructive) {
     // Async: sendMessageAsync Flow + automaticToolCalling = true
     // OpenApiTool adapters → ToolExecutor (cache / array cap / truncate)
@@ -249,22 +266,40 @@ Do not widen the `LlmProvider` interface for this flag.
 | API | `sendMessageAsync()` Flow | `sendMessage()` |
 | Tool loop | LiteRT + `OpenApiTool` | ChatEngine |
 | Streaming | Real `TextDelta` chunks | Thinking animation |
-| Confirm / repeat / token accounting | N/A or adapter emit | ChatEngine |
+| Confirm / repeat / token accounting | Timeout + max tool rounds inside provider; emit tool-activity events | ChatEngine |
 
 ### OpenApiTool adapter
 
 - `getToolDescriptionJsonString()` from the stripped OpenAPI schema  
 - `execute(params)` → `runBlocking { toolExecutor.execute(...) }` on LiteRT’s worker thread  
-- Optional SharedFlow/callback for tool-executing UI events when ChatEngine is not in the loop  
+- **Required for PR2 UI parity:** adapters (or provider) emit tool-executing / tool-finished events onto a `SharedFlow` that `AssistantViewModel` already (or newly) collects — silent auto-tool loops are not acceptable  
 
-### 12B policy
+### 12B policy vs #453 Simple
 
-| | E4B | 12B |
-|--|-----|-----|
-| Capability | Simple (`onDevice`) | On-device rich policy (not frontier Full) |
-| Tools | Local only, hard cap 10 | Local + MCP (≤5), total cap 15 |
-| Default mode | TOOLS_ONLY | TOKEN_SAVER |
-| Schemas | Stripped (#330) | Standard or stripped per mode |
+**Contradiction to resolve in PR2 (not optional):** Today `onDevice = true` ⇒ `ModelCapability.Simple`, and Simple **always** skips MCP and forces `TOOLS_ONLY`. Issue #264’s 12B row (MCP ≤5, total cap 15, TOKEN_SAVER) **cannot** work with that boolean.
+
+PR2 extends the capability model (preferred shape):
+
+```kotlin
+enum class OnDeviceTier { E4B, LARGE }  // from catalog
+
+// resolve():
+//   onDevice + E4B   → Simple          (local only, cap 10, TOOLS_ONLY ceiling)
+//   onDevice + LARGE → OnDeviceLarge   // new tier OR dedicated policy branch
+//   !onDevice        → existing #453 heuristics
+```
+
+| | E4B (`Simple`) | 12B (`OnDeviceLarge`) |
+|--|----------------|------------------------|
+| MCP | No | Yes, budget ≤5 |
+| Total tool cap | 10 | 15 |
+| Default / ceiling mode | TOOLS_ONLY | TOKEN_SAVER ceiling (user may go more aggressive, not less) |
+| Schemas | Stripped (#330) | Per effective mode (#330 mapping) |
+| `onDevice` | true | true |
+
+Do **not** fake 12B as `ModelCapability.Full` — that drops hard caps and treatson-device like frontier cloud.
+
+PR1 does not implement `OnDeviceLarge`; downloading 12B in PR1 still routes as Simple.
 
 ## Testing strategy
 
@@ -297,8 +332,10 @@ Fakes must implement `ILocalModelRepository`. No LiteRT types in `commonMain` te
 - [ ] Async path: streaming + auto tool calling for read-only queries
 - [ ] Sync path retained when destructive tools are present
 - [ ] `OpenApiTool` adapters preserve caching / truncation / array capping
-- [ ] 12B tool policy (MCP allowed within caps)
+- [ ] Tool-activity events visible in UI on async path
+- [ ] `#453` extended: `OnDeviceLarge` (or equivalent) for 12B — MCP ≤5, total cap 15, TOKEN_SAVER ceiling; E4B remains Simple
 - [ ] Streaming UI for async path
+- [ ] Async path bounded by timeout + max tool rounds
 
 ### Prototype verification (issue — may be manual)
 
@@ -314,6 +351,26 @@ Fakes must implement `ILocalModelRepository`. No LiteRT types in `commonMain` te
 3. Do not expand ChatEngine’s public API for PR1  
 4. Keep files focused; extract if `LocalLlmProvider` actual grows past ~400 LOC without a documented exception  
 5. After PR1 merges (or its interfaces stabilize), a second agent may implement PR2 against this spec  
+6. Spike LiteRT schema registration (`automaticToolCalling = false`) in the first PR1 task that touches the engine  
+7. PR2’s first task should be the `#453` / `OnDeviceLarge` extension + tests — dual-path depends on correct tool sets  
+
+## Spec review log
+
+### Pass 2 (2026-08-07) — findings addressed in-doc
+
+| Severity | Finding | Resolution |
+|----------|---------|------------|
+| **Must-fix** | 12B MCP + TOKEN_SAVER contradicts `#453` `onDevice → Simple` (no MCP, TOOLS_ONLY) | PR2 explicitly extends capability with `OnDeviceLarge`; PR1 keeps Simple for all on-device |
+| **Must-fix** | Download `Ready` conflated with on-disk readiness | Split: `isReady()` vs transient `Succeeded` / `Idle` |
+| Med | No `cancelDownload` | Added |
+| Med | No engine loading UI state | Added Loading/Ready phase requirement |
+| Med | Async path silent tools / unbounded loop | Required tool-activity `SharedFlow` + timeout/max rounds |
+| Med | Context chars stuck at cloud TOOLS_ONLY 4K | Tie OnDevice context budget to catalog defaults |
+| Med | Package path ambiguous | Locked to `assistant/local/` |
+| Med | Schema-only tools unverified with LiteRT | Early PR1 spike called out |
+| Low | `DestructiveToolLookup` shown as static call | Fixed to injected instance |
+| Low | Polymorphic config migration | Noted serializer registration |
+| Low | GPU estimate formula omitted | Documented Kai/issue formula |
 
 ## References
 
