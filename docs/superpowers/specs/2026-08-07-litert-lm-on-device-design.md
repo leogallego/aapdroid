@@ -220,14 +220,20 @@ ModelCapabilityResolver.resolve(
 
 ### Errors
 
-Map timeout / OOM / engine failures to existing LLM exceptions (`LlmTimeoutException`, `LlmServerException`) or a thin local subtype if distinction helps UI. Do not leak raw platform exceptions past the provider boundary.
+Map timeout / OOM / engine failures to existing LLM exceptions only (`LlmTimeoutException`, `LlmServerException`). Do not introduce a new exception type in PR1. Do not leak raw platform exceptions past the provider boundary.
 
 ## PR2 — Dual-path + 12B policy
 
 ### Path selection (inside `LocalLlmProvider`)
 
+`LlmProvider.generateStream` only receives Koog `ToolDescriptor`s (no `isDestructive`). For PR2, inject a `DestructiveToolLookup` at provider construction (backed by the local/MCP tool registry already known to DI):
+
 ```kotlin
-val hasDestructive = tools.any { /* resolve isDestructive from active ToolSpec set */ }
+fun interface DestructiveToolLookup {
+    fun isDestructive(toolName: String): Boolean
+}
+
+val hasDestructive = tools.any { DestructiveToolLookup.isDestructive(it.name) }
 if (tools.isEmpty() || !hasDestructive) {
     // Async: sendMessageAsync Flow + automaticToolCalling = true
     // OpenApiTool adapters → ToolExecutor (cache / array cap / truncate)
@@ -236,7 +242,7 @@ if (tools.isEmpty() || !hasDestructive) {
 }
 ```
 
-Prefer surfacing `hasDestructiveTools` from the ToolRouter/VM tool set if that keeps the provider free of a full tool registry; otherwise look up by name against the specs passed into the turn.
+Do not widen the `LlmProvider` interface for this flag.
 
 | Feature | Async (read-only / no tools) | Sync (any destructive) |
 |---------|------------------------------|-------------------------|
