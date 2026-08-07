@@ -76,10 +76,12 @@ class AssistantRepository(
     override suspend fun saveLlmConfig(config: LlmProviderConfig) {
         val providerKey = when (config) {
             is LlmProviderConfig.OpenAiCompatible -> KnownProvider.fromUrl(config.url).name
+            is LlmProviderConfig.OnDevice -> KnownProvider.LOCAL.name
         }
 
         val apiKey = when (config) {
             is LlmProviderConfig.OpenAiCompatible -> config.apiKey
+            is LlmProviderConfig.OnDevice -> null
         }
         if (!apiKey.isNullOrBlank()) {
             tokenManager.saveLlmApiKey(providerKey, apiKey)
@@ -109,6 +111,7 @@ class AssistantRepository(
         for ((key, config) in configs) {
             val apiKey = when (config) {
                 is LlmProviderConfig.OpenAiCompatible -> config.apiKey
+                is LlmProviderConfig.OnDevice -> null
             }
             if (!apiKey.isNullOrBlank()) {
                 tokenManager.saveLlmApiKey(key, apiKey)
@@ -161,11 +164,13 @@ class AssistantRepository(
     ): LlmProviderConfig =
         when (config) {
             is LlmProviderConfig.OpenAiCompatible -> config.copy(apiKey = apiKey)
+            is LlmProviderConfig.OnDevice -> config
         }
 
     private fun stripApiKey(config: LlmProviderConfig): LlmProviderConfig =
         when (config) {
             is LlmProviderConfig.OpenAiCompatible -> config.copy(apiKey = null)
+            is LlmProviderConfig.OnDevice -> config
         }
 
     override val activeConfigFlow: Flow<LlmProviderConfig?> =

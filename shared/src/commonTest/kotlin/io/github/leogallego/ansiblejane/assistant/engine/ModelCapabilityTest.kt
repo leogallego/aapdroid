@@ -116,6 +116,22 @@ class ModelCapabilityTest {
     }
 
     @Test
+    fun resolve_localProvider_onDevice_isSimple() {
+        assertEquals(
+            ModelCapability.Simple,
+            ModelCapabilityResolver.resolve(KnownProvider.LOCAL, "gemma-4-e4b-it", onDevice = true),
+        )
+    }
+
+    @Test
+    fun resolve_localProvider_withoutOnDeviceFlag_isSimple() {
+        assertEquals(
+            ModelCapability.Simple,
+            ModelCapabilityResolver.resolve(KnownProvider.LOCAL, "gemma-4-e4b-it", onDevice = false),
+        )
+    }
+
+    @Test
     fun `Simple effective mode SHOULD force TOOLS_ONLY ceiling`() {
         assertEquals(
             TokenSavingMode.TOOLS_ONLY,
