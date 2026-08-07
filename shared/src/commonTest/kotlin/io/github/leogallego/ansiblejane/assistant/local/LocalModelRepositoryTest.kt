@@ -19,6 +19,8 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.test.runTest
 
 class LocalModelRepositoryTest {
@@ -78,6 +80,52 @@ class LocalModelRepositoryTest {
         assertNull(repo.modelPath(model.id))
         val expectedPath = LocalModelFiles.join(root, model.id, model.fileName)
         assertFalse(LocalModelFiles.exists(expectedPath))
+        assertFalse(LocalModelFiles.exists("$expectedPath.partial"))
+    }
+
+    @Test
+    fun cancelDownload_abortsInFlightDownload() = runTest {
+        val model = testModel(sha256 = payloadSha256, sizeBytes = payload.size.toLong())
+        val root = newRoot()
+        val engine = MockEngine {
+            delay(10_000)
+            respond(
+                content = payload,
+                status = HttpStatusCode.OK,
+                headers = headersOf(HttpHeaders.ContentType, "application/octet-stream"),
+            )
+        }
+        val client = HttpClient(engine) { expectSuccess = false }
+        val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
+        scopes += scope
+        val repo = LocalModelRepository(
+            deviceResources = FakeDeviceResources(
+                freeDiskBytes = model.sizeBytes + diskBufferBytes + 1,
+                modelStorageDirectory = root,
+            ),
+            httpClient = client,
+            scope = scope,
+            catalog = listOf(model),
+            modelRootOverride = root,
+        )
+
+        val downloadTask = scope.launch { repo.download(model.id) }
+
+        var attempts = 0
+        while (repo.downloadState.value !is LocalModelDownloadState.Downloading && attempts < 100) {
+            delay(50)
+            attempts++
+        }
+        assertIs<LocalModelDownloadState.Downloading>(repo.downloadState.value)
+
+        repo.cancelDownload()
+        downloadTask.join()
+
+        assertIs<LocalModelDownloadState.Idle>(repo.downloadState.value)
+        assertFalse(repo.isReady(model.id))
+        val expectedPath = LocalModelFiles.join(root, model.id, model.fileName)
+        assertFalse(LocalModelFiles.exists(expectedPath))
+        assertFalse(LocalModelFiles.exists("$expectedPath.partial"))
     }
 
     @Test

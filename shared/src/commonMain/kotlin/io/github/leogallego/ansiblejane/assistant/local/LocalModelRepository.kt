@@ -12,9 +12,8 @@ import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.atomicfu.locks.synchronized
 import kotlinx.coroutines.launch
-import kotlinx.coroutines.sync.Mutex
-import kotlinx.coroutines.sync.withLock
 
 class LocalModelRepository(
     private val deviceResources: IDeviceResources,
@@ -28,7 +27,7 @@ class LocalModelRepository(
         MutableStateFlow<LocalModelDownloadState>(LocalModelDownloadState.Idle)
     override val downloadState: StateFlow<LocalModelDownloadState> = _downloadState.asStateFlow()
 
-    private val mutex = Mutex()
+    private val downloadJobLock = Any()
     private var downloadJob: Job? = null
 
     override fun catalog(): List<LocalModel> = catalog
@@ -66,17 +65,16 @@ class LocalModelRepository(
             return
         }
 
-        val job = scope.launch {
-            runDownload(model, root)
-        }
-        mutex.withLock {
+        val job = synchronized(downloadJobLock) {
             downloadJob?.cancel()
-            downloadJob = job
+            scope.launch {
+                runDownload(model, root)
+            }.also { downloadJob = it }
         }
         try {
             job.join()
         } finally {
-            mutex.withLock {
+            synchronized(downloadJobLock) {
                 if (downloadJob === job) {
                     downloadJob = null
                 }
@@ -85,7 +83,9 @@ class LocalModelRepository(
     }
 
     override fun cancelDownload() {
-        downloadJob?.cancel()
+        synchronized(downloadJobLock) {
+            downloadJob?.cancel()
+        }
     }
 
     override suspend fun delete(modelId: String) {
