@@ -2,7 +2,7 @@ package io.github.leogallego.ansiblejane.presentation.dashboard
 
 import app.cash.turbine.test
 import io.github.leogallego.ansiblejane.TestData
-import io.github.leogallego.ansiblejane.fakes.FakeAapApiProvider
+import io.github.leogallego.ansiblejane.fakes.FakeEdaActivationRepository
 import io.github.leogallego.ansiblejane.fakes.FakeHostRepository
 import io.github.leogallego.ansiblejane.fakes.FakeInventoryRepository
 import io.github.leogallego.ansiblejane.fakes.FakeJobRepository
@@ -21,7 +21,6 @@ import kotlin.test.AfterTest
 import kotlin.test.BeforeTest
 import kotlin.test.Test
 import kotlin.test.assertEquals
-import kotlin.test.assertNull
 import kotlin.test.assertTrue
 
 @OptIn(ExperimentalCoroutinesApi::class)
@@ -33,7 +32,7 @@ class DashboardViewModelTest {
     private lateinit var fakeHostRepo: FakeHostRepository
     private lateinit var fakeProjectRepo: FakeProjectRepository
     private lateinit var fakeScheduleRepo: FakeScheduleRepository
-    private lateinit var fakeApiProvider: FakeAapApiProvider
+    private lateinit var fakeEdaActivationRepo: FakeEdaActivationRepository
     private lateinit var fakeTokenManager: FakeTokenManager
 
     @BeforeTest
@@ -45,7 +44,7 @@ class DashboardViewModelTest {
         fakeHostRepo = FakeHostRepository()
         fakeProjectRepo = FakeProjectRepository()
         fakeScheduleRepo = FakeScheduleRepository()
-        fakeApiProvider = FakeAapApiProvider()
+        fakeEdaActivationRepo = FakeEdaActivationRepository()
         fakeTokenManager = FakeTokenManager()
     }
 
@@ -61,7 +60,7 @@ class DashboardViewModelTest {
         hostRepository = fakeHostRepo,
         projectRepository = fakeProjectRepo,
         scheduleRepository = fakeScheduleRepo,
-        apiProvider = fakeApiProvider,
+        edaActivationRepository = fakeEdaActivationRepo,
         tokenManager = fakeTokenManager,
     )
 
@@ -89,7 +88,8 @@ class DashboardViewModelTest {
             assertEquals(3, success.hostCount)
             assertEquals(1, success.templateCount)
             assertEquals(2, success.projectCount)
-            assertNull(success.edaActivationsCount)
+            assertEquals(0, success.edaActivationsCount)
+            assertEquals(0, success.edaActiveRulebooksCount)
             assertEquals(1, success.upcomingSchedules.size)
             assertEquals("Prod", success.instanceAlias)
         }

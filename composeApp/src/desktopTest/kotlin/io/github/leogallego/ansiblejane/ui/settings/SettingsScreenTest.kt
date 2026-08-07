@@ -11,20 +11,16 @@ import androidx.compose.ui.test.ComposeUiTest
 import androidx.compose.ui.test.runComposeUiTest
 import io.github.leogallego.ansiblejane.assistant.engine.ToolRouter
 import io.github.leogallego.ansiblejane.desktopTestKoinModule
-import io.github.leogallego.ansiblejane.fakes.FakeAapApiProvider
+import io.github.leogallego.ansiblejane.fakes.FakeAuthRepository
+import io.github.leogallego.ansiblejane.fakes.FakeMcpConnectionRepository
 import io.github.leogallego.ansiblejane.fakes.FakeAssistantRepository
 import io.github.leogallego.ansiblejane.fakes.FakeTokenManager
 import io.github.leogallego.ansiblejane.fakes.FakeToolManifestRepository
 import io.github.leogallego.ansiblejane.fakes.FakeUserPreferencesRepository
 import io.github.leogallego.ansiblejane.model.AapInstance
-import io.github.leogallego.ansiblejane.network.InstanceDiscovery
-import io.github.leogallego.ansiblejane.network.mcp.McpServerManager
 import io.github.leogallego.ansiblejane.presentation.settings.SettingsViewModel
 import io.github.leogallego.ansiblejane.setupMainDispatcher
 import io.github.leogallego.ansiblejane.tearDownMainDispatcher
-import io.ktor.client.HttpClient
-import io.ktor.client.engine.mock.MockEngine
-import io.ktor.client.engine.mock.respond
 import kotlinx.serialization.json.Json
 import org.koin.core.context.startKoin
 import org.koin.core.context.stopKoin
@@ -36,15 +32,11 @@ import kotlin.test.Test
 class SettingsScreenTest {
 
     private val fakeTokenManager = FakeTokenManager()
-    private val fakeApiProvider = FakeAapApiProvider()
+    private val fakeAuthRepository = FakeAuthRepository(fakeTokenManager)
     private val fakeUserPreferences = FakeUserPreferencesRepository()
     private val fakeAssistantRepo = FakeAssistantRepository()
     private val json = Json { ignoreUnknownKeys = true }
-    private val mcpServerManager = McpServerManager(
-        ktorClientFactory = { _, _ ->
-            HttpClient(MockEngine) { engine { addHandler { respond("") } } }
-        }
-    )
+    private val mcpConnectionRepository = FakeMcpConnectionRepository()
 
     private val instance1 = AapInstance(
         id = "inst-1",
@@ -74,13 +66,12 @@ class SettingsScreenTest {
 
     private fun createViewModel() = SettingsViewModel(
         tokenManager = fakeTokenManager,
-        apiProvider = fakeApiProvider,
+        authRepository = fakeAuthRepository,
         userPreferences = fakeUserPreferences,
         assistantRepository = fakeAssistantRepo,
-        mcpServerManager = mcpServerManager,
+        mcpConnectionRepository = mcpConnectionRepository,
         manifestRepository = FakeToolManifestRepository(),
-        instanceDiscovery = InstanceDiscovery(json),
-        toolRouter = ToolRouter(repository = fakeAssistantRepo),
+        toolRouter = ToolRouter(initialLocalTools = emptyList(), repository = fakeAssistantRepo),
         json = json
     )
 

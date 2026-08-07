@@ -3,7 +3,7 @@ package io.github.leogallego.ansiblejane.data
 import io.github.leogallego.ansiblejane.model.AapInstance
 import io.github.leogallego.ansiblejane.model.InstanceInfo
 import io.github.leogallego.ansiblejane.model.McpServerConfig
-import io.github.leogallego.ansiblejane.network.ApiVersion
+import io.github.leogallego.ansiblejane.model.ApiVersion
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.StateFlow
 

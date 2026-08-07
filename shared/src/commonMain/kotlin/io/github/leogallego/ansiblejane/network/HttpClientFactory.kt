@@ -1,5 +1,7 @@
 package io.github.leogallego.ansiblejane.network
 
+import io.github.leogallego.ansiblejane.model.ApiVersion
+
 import io.github.leogallego.ansiblejane.assistant.engine.DebugLog
 import io.github.leogallego.ansiblejane.data.ITokenManager
 import io.ktor.client.HttpClient

@@ -1,5 +1,7 @@
 package io.github.leogallego.ansiblejane.network
 
+import io.github.leogallego.ansiblejane.model.ApiVersion
+
 import io.github.leogallego.ansiblejane.assistant.engine.DebugLog as Log
 import io.github.leogallego.ansiblejane.model.AapComponent
 import io.github.leogallego.ansiblejane.model.InstanceInfo

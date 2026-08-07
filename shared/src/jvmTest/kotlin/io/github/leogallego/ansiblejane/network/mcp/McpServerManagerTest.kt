@@ -1,5 +1,8 @@
 package io.github.leogallego.ansiblejane.network.mcp
 
+import io.github.leogallego.ansiblejane.model.McpConnectionState
+import io.github.leogallego.ansiblejane.model.McpServerInfo
+import io.github.leogallego.ansiblejane.model.McpToolDefinition
 import io.github.leogallego.ansiblejane.assistant.tools.McpTool
 import io.github.leogallego.ansiblejane.model.AapInstance
 import io.github.leogallego.ansiblejane.model.McpServerConfig

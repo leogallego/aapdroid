@@ -1,16 +1,24 @@
 package io.github.leogallego.ansiblejane.network.mcp
 
+import io.github.leogallego.ansiblejane.assistant.engine.DebugLog as Log
+import io.github.leogallego.ansiblejane.assistant.tools.ErrorType
 import io.github.leogallego.ansiblejane.assistant.tools.McpTool
+import io.github.leogallego.ansiblejane.assistant.tools.McpToolInvoker
 import io.github.leogallego.ansiblejane.assistant.tools.Tool
+import io.github.leogallego.ansiblejane.assistant.tools.ToolResult
+import io.github.leogallego.ansiblejane.data.IMcpConnectionRepository
 import io.github.leogallego.ansiblejane.model.AapInstance
+import io.github.leogallego.ansiblejane.model.McpConnectionState
 import io.github.leogallego.ansiblejane.model.McpServerConfig
+import io.github.leogallego.ansiblejane.model.McpServerInfo
+import io.github.leogallego.ansiblejane.model.McpToolDefinition
 import io.github.leogallego.ansiblejane.model.ServerToolCache
 import io.github.leogallego.ansiblejane.model.ToolManifest
-import io.github.leogallego.ansiblejane.assistant.engine.DebugLog as Log
 import io.ktor.client.HttpClient
 import io.modelcontextprotocol.kotlin.sdk.client.Client
 import io.modelcontextprotocol.kotlin.sdk.client.StreamableHttpClientTransport
 import io.modelcontextprotocol.kotlin.sdk.types.Implementation
+import io.modelcontextprotocol.kotlin.sdk.types.TextContent
 import kotlin.concurrent.Volatile
 import kotlinx.atomicfu.locks.SynchronizedObject
 import kotlinx.atomicfu.locks.synchronized
@@ -23,6 +31,7 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
+import kotlinx.serialization.json.JsonObject
 
 private data class SdkClientState(
     val client: Client,
@@ -33,19 +42,19 @@ private data class SdkClientState(
 
 class McpServerManager(
     private val ktorClientFactory: (AapInstance, McpServerConfig) -> HttpClient
-) : SynchronizedObject() {
+) : SynchronizedObject(), IMcpConnectionRepository, McpToolInvoker {
     private val _connections = MutableStateFlow<Map<String, McpConnectionState>>(emptyMap())
-    val connections: StateFlow<Map<String, McpConnectionState>> = _connections.asStateFlow()
+    override val connections: StateFlow<Map<String, McpConnectionState>> = _connections.asStateFlow()
 
     private val _mcpTools = MutableStateFlow<List<Tool>>(emptyList())
-    val mcpTools: StateFlow<List<Tool>> = _mcpTools.asStateFlow()
+    override val mcpTools: StateFlow<List<Tool>> = _mcpTools.asStateFlow()
 
     private val clients = mutableMapOf<String, SdkClientState>()
     private val connectionMutexes = mutableMapOf<String, Mutex>()
     @Volatile
     private var currentInstance: AapInstance? = null
 
-    suspend fun connectAll(instance: AapInstance) {
+    override suspend fun connectAll(instance: AapInstance) {
         currentInstance = instance
         disconnectAll()
 
@@ -86,7 +95,7 @@ class McpServerManager(
         }
     }
 
-    suspend fun disconnectAll() {
+    override suspend fun disconnectAll() {
         val states = synchronized(this) {
             val s = clients.values.toList()
             clients.clear()
@@ -105,7 +114,7 @@ class McpServerManager(
     fun getToolsForServer(label: String): List<Tool> =
         _mcpTools.value.filter { it.serverLabel == label }
 
-    fun setCachedTools(tools: List<Tool>) {
+    override fun setCachedTools(tools: List<Tool>) {
         _mcpTools.value = tools
     }
 
@@ -141,10 +150,38 @@ class McpServerManager(
         }
     }
 
-    suspend fun connectAllWithCache(
+
+    override suspend fun invokeMcpTool(
+        serverLabel: String,
+        toolName: String,
+        args: JsonObject
+    ): ToolResult {
+        return try {
+            val client = ensureConnected(serverLabel)
+            val result = client.callTool(toolName, args)
+            val text = result.content
+                .filterIsInstance<TextContent>()
+                .joinToString("\n") { it.text }
+            if (result.isError == true) {
+                ToolResult(success = false, data = text, errorType = ErrorType.SERVER_ERROR)
+            } else {
+                ToolResult(success = true, data = text)
+            }
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            ToolResult(
+                success = false,
+                data = "Connection error: ${e.message}",
+                errorType = ErrorType.CONNECTION_ERROR
+            )
+        }
+    }
+
+    override suspend fun connectAllWithCache(
         instance: AapInstance,
-        manifest: ToolManifest? = null,
-        forceRefresh: Boolean = false
+        manifest: ToolManifest?,
+        forceRefresh: Boolean
     ) {
         currentInstance = instance
 
@@ -239,7 +276,7 @@ class McpServerManager(
         }
     }
 
-    suspend fun reconnectServer(label: String) {
+    override suspend fun reconnectServer(label: String) {
         val instance = currentInstance ?: return
         val config = instance.mcpServerUrls?.find { it.label == label } ?: return
 
@@ -257,7 +294,7 @@ class McpServerManager(
         connectServer(config, ktorClient)
     }
 
-    fun refreshConnections() {
+    override fun refreshConnections() {
         synchronized(this) { clients.toMap() }.forEach { (label, state) ->
             _connections.update {
                 it + (label to McpConnectionState.Connected(
@@ -268,7 +305,7 @@ class McpServerManager(
         }
     }
 
-    fun buildManifest(instance: AapInstance): ToolManifest? {
+    override fun buildManifest(instance: AapInstance): ToolManifest? {
         val allTools = _mcpTools.value
         if (allTools.isEmpty()) return null
 

@@ -41,7 +41,7 @@ import org.jetbrains.compose.resources.stringResource
 import aapremotecontrol.composeapp.generated.resources.*
 import io.github.leogallego.ansiblejane.assistant.tools.ToolSource
 import io.github.leogallego.ansiblejane.model.McpServerConfig
-import io.github.leogallego.ansiblejane.network.mcp.McpConnectionState
+import io.github.leogallego.ansiblejane.model.McpConnectionState
 import io.github.leogallego.ansiblejane.presentation.settings.McpToolUiState
 
 @Composable

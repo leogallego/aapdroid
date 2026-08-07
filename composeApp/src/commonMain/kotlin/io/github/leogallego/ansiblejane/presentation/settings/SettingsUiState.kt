@@ -5,7 +5,7 @@ import io.github.leogallego.ansiblejane.assistant.presentation.ModelFetchState
 import io.github.leogallego.ansiblejane.model.PollInterval
 import io.github.leogallego.ansiblejane.model.AapInstance
 import io.github.leogallego.ansiblejane.model.McpServerConfig
-import io.github.leogallego.ansiblejane.network.mcp.McpConnectionState
+import io.github.leogallego.ansiblejane.model.McpConnectionState
 import io.github.leogallego.ansiblejane.ui.components.ThemeMode
 import io.github.leogallego.ansiblejane.ui.components.TimeFormat
 

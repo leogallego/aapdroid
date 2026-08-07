@@ -19,7 +19,7 @@ import androidx.navigation.compose.composable
 import androidx.navigation.compose.rememberNavController
 import androidx.navigation.toRoute
 import io.github.leogallego.ansiblejane.data.ITokenManager
-import io.github.leogallego.ansiblejane.network.AuthEvents
+import io.github.leogallego.ansiblejane.data.IAuthRepository
 import io.github.leogallego.ansiblejane.ui.auth.AuthScreen
 import io.github.leogallego.ansiblejane.ui.jobs.JobStatusScreen
 import io.github.leogallego.ansiblejane.ui.main.MainScreen
@@ -37,6 +37,7 @@ fun AppNavigation(
     onHandleDeepLink: ((NavHostController) -> Unit)? = null
 ) {
     val tokenManager: ITokenManager = koinInject()
+    val authRepository: IAuthRepository = koinInject()
 
     val instances by tokenManager.instances.collectAsState()
     LaunchedEffect(instances) {
@@ -54,7 +55,7 @@ fun AppNavigation(
     }
 
     LaunchedEffect(Unit) {
-        AuthEvents.unauthorizedEvent.collect { instanceId ->
+        authRepository.unauthorizedEvent.collect { instanceId ->
             val currentRoute = navController.currentDestination?.route
             if (currentRoute != null && currentRoute.contains("AuthRoute")) {
                 return@collect

@@ -1,5 +1,8 @@
 package io.github.leogallego.ansiblejane.network.mcp
 
+import io.github.leogallego.ansiblejane.model.McpServerInfo
+import io.github.leogallego.ansiblejane.model.McpToolDefinition
+import io.github.leogallego.ansiblejane.network.createPlatformHttpClient
 import io.ktor.client.HttpClient
 import io.ktor.client.engine.okhttp.OkHttp
 import io.ktor.client.plugins.sse.SSE
@@ -8,7 +11,6 @@ import io.modelcontextprotocol.kotlin.sdk.client.StreamableHttpClientTransport
 import io.modelcontextprotocol.kotlin.sdk.types.Implementation
 import io.modelcontextprotocol.kotlin.sdk.types.TextContent
 import io.modelcontextprotocol.kotlin.sdk.types.ToolSchema
-import io.github.leogallego.ansiblejane.network.createPlatformHttpClient
 import kotlinx.coroutines.runBlocking
 import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.buildJsonObject

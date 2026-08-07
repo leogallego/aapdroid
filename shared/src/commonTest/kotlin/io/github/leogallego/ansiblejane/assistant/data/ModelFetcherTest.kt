@@ -43,10 +43,11 @@ class ModelFetcherTest {
                 headers = headersOf(HttpHeaders.ContentType, "application/json")
             )
         }
-        val client = HttpClient(engine) {
-            expectSuccess = false
+        return ModelFetcher(json) { _ ->
+            HttpClient(engine) {
+                expectSuccess = false
+            }
         }
-        return ModelFetcher(client, json)
     }
 
     @Test

@@ -1,4 +1,4 @@
-package io.github.leogallego.ansiblejane.network.mcp
+package io.github.leogallego.ansiblejane.model
 
 data class PopularMcpServer(
     val name: String,

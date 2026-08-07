@@ -4,7 +4,7 @@ import io.github.leogallego.ansiblejane.assistant.engine.DebugLog as Log
 import io.github.leogallego.ansiblejane.model.AapInstance
 import io.github.leogallego.ansiblejane.model.InstanceInfo
 import io.github.leogallego.ansiblejane.model.McpServerConfig
-import io.github.leogallego.ansiblejane.network.ApiVersion
+import io.github.leogallego.ansiblejane.model.ApiVersion
 import io.github.leogallego.ansiblejane.platform.DataStoreFactory
 import io.github.leogallego.ansiblejane.platform.SecureKeyStorage
 import androidx.datastore.preferences.core.booleanPreferencesKey
