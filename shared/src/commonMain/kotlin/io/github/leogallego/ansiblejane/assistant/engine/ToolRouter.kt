@@ -542,19 +542,33 @@ class ToolRouter(
         /** Default OPERATOR for callers that omit role; pass explicit role from the active instance. Unknown/`null` fail-closes. */
         aapRole: AapRole? = AapRole.OPERATOR,
         /** Soft top-K after overlap scoring (#330). STANDARD stays slightly generous. */
-        tokenSavingMode: TokenSavingMode = TokenSavingMode.STANDARD
+        tokenSavingMode: TokenSavingMode = TokenSavingMode.STANDARD,
+        /**
+         * Model capability tier (#453). [ModelCapability.Simple] excludes MCP, applies
+         * schema-complexity filtering, and hard-caps tool count. Callers should pass
+         * [ModelCapabilityResolver.effectiveTokenSavingMode] for [tokenSavingMode].
+         */
+        capability: ModelCapability = ModelCapability.Full,
     ): QueryResult = synchronized(this) {
         lastRoutingContext = RoutingContext(serverConfigs, aapRole)
+        val effectiveMode = ModelCapabilityResolver.effectiveTokenSavingMode(capability, tokenSavingMode)
         val queryWords = tokenizeQuery(query)
         val stemmedQuery = stemQueryTokens(queryWords)
-        Log.d(TAG, "QUERY: words=$queryWords, stemmed=$stemmedQuery, role=$aapRole, mode=$tokenSavingMode")
+        Log.d(
+            TAG,
+            "QUERY: words=$queryWords, stemmed=$stemmedQuery, role=$aapRole, " +
+                "mode=$tokenSavingMode→$effectiveMode, capability=$capability"
+        )
 
         val matchedCategories = Category.entries.filter { category ->
             category.stemmedKeywords.any { it in stemmedQuery }
         }
 
         if (matchedCategories.isEmpty()) {
-            return@synchronized noCategoryMatchFallback(queryWords, stemmedQuery, serverConfigs, aapRole)
+            val fallback = noCategoryMatchFallback(
+                queryWords, stemmedQuery, serverConfigs, aapRole, capability
+            )
+            return@synchronized applyCapabilityPolicy(fallback, capability)
         }
         Log.d(TAG, "QUERY: matched categories=${matchedCategories.map { it.name }}")
 
@@ -574,26 +588,29 @@ class ToolRouter(
         val routedMcp = mutableListOf<Tool>()
         val unroutedMcp = mutableListOf<Tool>()
 
-        for (tool in mcpTools) {
-            if (!isToolEnabled(tool.spec.name, ToolSource.MCP, tool.serverLabel)) continue
-            if (!passesRoleFilter(tool, aapRole)) continue
+        // #453 Simple: local tools only — never send MCP schemas to small/local models
+        if (capability != ModelCapability.Simple) {
+            for (tool in mcpTools) {
+                if (!isToolEnabled(tool.spec.name, ToolSource.MCP, tool.serverLabel)) continue
+                if (!passesRoleFilter(tool, aapRole)) continue
 
-            val passesReadOnly = tool.serverLabel !in readOnlyLabels ||
-                WRITE_ACTIONS.none { action -> tool.spec.name.endsWith(action) }
-            if (!passesReadOnly) continue
+                val passesReadOnly = tool.serverLabel !in readOnlyLabels ||
+                    WRITE_ACTIONS.none { action -> tool.spec.name.endsWith(action) }
+                if (!passesReadOnly) continue
 
-            val toolToolset = tool.toolset
-            val toolsetCategories = toolToolset?.let { TOOLSET_CATEGORY_MAP[it] }
-            when {
-                toolsetCategories != null && matchedCategories.any { it in toolsetCategories } ->
-                    routedMcp.add(tool)
-                toolsetCategories != null -> { }
-                toolToolset != null -> {
-                    Log.d(TAG, "FILTER: unknown toolset '${toolToolset}' for ${tool.spec.name}, treating as unrouted")
-                    unroutedMcp.add(tool)
+                val toolToolset = tool.toolset
+                val toolsetCategories = toolToolset?.let { TOOLSET_CATEGORY_MAP[it] }
+                when {
+                    toolsetCategories != null && matchedCategories.any { it in toolsetCategories } ->
+                        routedMcp.add(tool)
+                    toolsetCategories != null -> { }
+                    toolToolset != null -> {
+                        Log.d(TAG, "FILTER: unknown toolset '${toolToolset}' for ${tool.spec.name}, treating as unrouted")
+                        unroutedMcp.add(tool)
+                    }
+                    else ->
+                        unroutedMcp.add(tool)
                 }
-                else ->
-                    unroutedMcp.add(tool)
             }
         }
 
@@ -603,7 +620,13 @@ class ToolRouter(
         // Within a category: when any tool overlaps, list_/get_ boost alone cannot admit
         // zero-overlap siblings (e.g. list_labels). Unrouted MCP always requires overlap.
         // Soft top-K prefers routed tools so unrouted MCP cannot crowd them out.
-        val topK = softTopK(tokenSavingMode)
+        val topK = softTopK(effectiveMode).let { k ->
+            if (capability == ModelCapability.Simple) {
+                minOf(k, ModelCapabilityResolver.SIMPLE_HARD_CAP)
+            } else {
+                k
+            }
+        }
         val routedBest = linkedMapOf<String, ScoredTool>()
         for (category in matchedCategories) {
             val localForCat = filteredLocal.filter { it.spec.name in category.localToolNames }
@@ -638,12 +661,37 @@ class ToolRouter(
             val meta = findMetaSearchTool(aapRole)
             if (meta != null) {
                 Log.d(TAG, "META: category match but empty cherry-pick — inject ${meta.spec.name}")
-                return@synchronized QueryResult(listOf(meta), categoryMatched = true)
+                return@synchronized applyCapabilityPolicy(
+                    QueryResult(listOf(meta), categoryMatched = true),
+                    capability
+                )
             }
             return@synchronized QueryResult(emptyList(), categoryMatched = true)
         }
 
-        QueryResult(cherryPicked, categoryMatched = true)
+        applyCapabilityPolicy(QueryResult(cherryPicked, categoryMatched = true), capability)
+    }
+
+    /**
+     * #453 Simple-tier post-filter: local-only (already enforced upstream), drop complex
+     * schemas, prefer allowlisted tools, hard-cap at [ModelCapabilityResolver.SIMPLE_HARD_CAP].
+     * Full tier is a no-op.
+     */
+    private fun applyCapabilityPolicy(
+        result: QueryResult,
+        capability: ModelCapability,
+    ): QueryResult {
+        if (capability != ModelCapability.Simple || result.tools.isEmpty()) return result
+
+        val localOnly = result.tools.filterIsInstance<LocalTool>()
+        val simpleEnough = localOnly.filter { ModelCapabilityResolver.isSchemaSimpleEnough(it.spec) }
+        val capped = ModelCapabilityResolver.preferAllowlistAndCap(simpleEnough)
+        Log.d(
+            TAG,
+            "SIMPLE: ${result.tools.size} → local=${localOnly.size} → " +
+                "schemaOk=${simpleEnough.size} → capped=${capped.size} [${capped.map { it.spec.name }}]"
+        )
+        return result.copy(tools = capped)
     }
 
     /** Prefer category-routed tools when filling soft top-K; unrouted fills remaining slots only. */
@@ -697,7 +745,8 @@ class ToolRouter(
         queryWords: Set<String>,
         stemmedQuery: Set<String>,
         serverConfigs: List<McpServerConfig>,
-        aapRole: AapRole?
+        aapRole: AapRole?,
+        capability: ModelCapability = ModelCapability.Full,
     ): QueryResult {
         Log.d(TAG, "QUERY: no categories matched — meta-search fallback")
 
@@ -717,7 +766,7 @@ class ToolRouter(
 
         if (stemmedQuery.isNotEmpty()) {
             val searched = cherryPick(
-                collectEnabledTools(serverConfigs, aapRole),
+                collectEnabledTools(serverConfigs, aapRole, capability),
                 stemmedQuery,
                 requireOverlap = true
             ).take(MAX_META_SEARCH_RESULTS)
@@ -756,7 +805,8 @@ class ToolRouter(
 
     private fun collectEnabledTools(
         serverConfigs: List<McpServerConfig>,
-        aapRole: AapRole?
+        aapRole: AapRole?,
+        capability: ModelCapability = ModelCapability.Full,
     ): List<Tool> {
         val readOnlyLabels = serverConfigs
             .filter { it.readOnly }
@@ -765,6 +815,7 @@ class ToolRouter(
         val enabledLocal = localTools.filter {
             isToolEnabled(it.spec.name, ToolSource.LOCAL) && passesRoleFilter(it, aapRole)
         }
+        if (capability == ModelCapability.Simple) return enabledLocal
         val enabledMcp = mcpTools.filter { tool ->
             isToolEnabled(tool.spec.name, ToolSource.MCP, tool.serverLabel) &&
                 passesRoleFilter(tool, aapRole) &&

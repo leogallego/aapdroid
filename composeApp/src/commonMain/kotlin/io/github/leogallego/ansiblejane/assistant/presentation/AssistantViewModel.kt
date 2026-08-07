@@ -3,11 +3,14 @@ package io.github.leogallego.ansiblejane.assistant.presentation
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import io.github.leogallego.ansiblejane.assistant.data.IAssistantRepository
+import io.github.leogallego.ansiblejane.assistant.data.KnownProvider
 import io.github.leogallego.ansiblejane.assistant.data.LlmProviderConfig
 import io.github.leogallego.ansiblejane.assistant.data.TokenSavingMode
 import io.github.leogallego.ansiblejane.assistant.engine.ChatEngine
 import io.github.leogallego.ansiblejane.assistant.engine.ChatEvent
 import io.github.leogallego.ansiblejane.assistant.engine.ChatMessage
+import io.github.leogallego.ansiblejane.assistant.engine.ModelCapability
+import io.github.leogallego.ansiblejane.assistant.engine.ModelCapabilityResolver
 import io.github.leogallego.ansiblejane.assistant.engine.ResponseSource
 import io.github.leogallego.ansiblejane.assistant.engine.Role
 import io.github.leogallego.ansiblejane.assistant.engine.TokenUsage
@@ -207,10 +210,27 @@ class AssistantViewModel(
             toolRouter.registerMcpTools(mcpTools)
 
             Log.d(TAG, "ROUTE: query=\"$text\", ${localTools.size} local, ${mcpTools.size} mcp, role=$aapRole")
-            val mode = config.tokenSavingMode
-            val queryResult = toolRouter.getToolsForQuery(text, serverConfigs, aapRole, mode)
-            Log.d(TAG, "ROUTE: categoryMatched=${queryResult.categoryMatched}, " +
-                "${queryResult.tools.size} tools selected, mode=$mode")
+            // #453: capability from active provider/model; Simple raises TokenSavingMode ceiling
+            val capability = ModelCapabilityResolver.resolve(
+                provider = KnownProvider.fromUrl(config.url),
+                model = config.model,
+                onDevice = false, // LiteRT / on-device flag lands with #264
+            )
+            val userMode = config.tokenSavingMode
+            val mode = ModelCapabilityResolver.effectiveTokenSavingMode(capability, userMode)
+            val queryResult = toolRouter.getToolsForQuery(
+                query = text,
+                serverConfigs = serverConfigs,
+                aapRole = aapRole,
+                tokenSavingMode = mode,
+                capability = capability,
+            )
+            Log.d(
+                TAG,
+                "ROUTE: categoryMatched=${queryResult.categoryMatched}, " +
+                    "${queryResult.tools.size} tools selected, capability=$capability, " +
+                    "mode=$userMode→$mode"
+            )
 
             // ToolRouter owns meta-search injection; empty means greetings / no match — do not re-inject
             if (queryResult.tools.isEmpty()) {
@@ -249,10 +269,12 @@ class AssistantViewModel(
                 return@launch
             }
 
-            val mcpLimit = when (mode) {
-                TokenSavingMode.STANDARD -> 10
-                TokenSavingMode.TOKEN_SAVER -> 5
-                TokenSavingMode.TOOLS_ONLY -> 3
+            // #453 Simple: MCP already excluded by ToolRouter; keep budget at 0 as defense in depth
+            val mcpLimit = when {
+                capability == ModelCapability.Simple -> 0
+                mode == TokenSavingMode.STANDARD -> 10
+                mode == TokenSavingMode.TOKEN_SAVER -> 5
+                else -> 3 // TOOLS_ONLY
             }
             val matchedLocal = queryResult.tools.filterIsInstance<LocalTool>()
             val matchedMcp = queryResult.tools.filter { it !is LocalTool }.take(mcpLimit)
