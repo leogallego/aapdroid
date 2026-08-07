@@ -79,6 +79,8 @@ class AssistantViewModel(
                     val newKey = when (config) {
                         is LlmProviderConfig.OpenAiCompatible ->
                             "${config.url}|${config.model}|${config.apiKey}"
+                        is LlmProviderConfig.OnDevice ->
+                            "on-device|${config.modelId}"
                     }
                     if (newKey != oldKey.substringBeforeLast("|")) {
                         cachedProvider?.close()
@@ -186,6 +188,23 @@ class AssistantViewModel(
             return
         }
 
+        if (config is LlmProviderConfig.OnDevice) {
+            _uiState.update { current ->
+                if (current is AssistantUiState.Active) {
+                    current.copy(
+                        messages = (current.messages + ChatMessage(
+                            role = Role.ASSISTANT,
+                            content = "On-device model support is not wired yet.",
+                            source = ResponseSource.LLM
+                        )).toImmutableList()
+                    )
+                } else current
+            }
+            return
+        }
+
+        val openAiConfig = config as LlmProviderConfig.OpenAiCompatible
+
         val userMessage = ChatMessage(role = Role.USER, content = text)
         repository.addMessage(userMessage)
 
@@ -195,7 +214,7 @@ class AssistantViewModel(
         ) }
 
         val trustSelfSigned = tokenManager.activeInstance.value?.trustSelfSigned == true
-        val provider = getOrCreateProvider(config as LlmProviderConfig.OpenAiCompatible, trustSelfSigned)
+        val provider = getOrCreateProvider(openAiConfig, trustSelfSigned)
 
         generateJob?.cancel()
         generateJob = viewModelScope.launch {
@@ -212,11 +231,11 @@ class AssistantViewModel(
             Log.d(TAG, "ROUTE: query=\"$text\", ${localTools.size} local, ${mcpTools.size} mcp, role=$aapRole")
             // #453: capability from active provider/model; Simple raises TokenSavingMode ceiling
             val capability = ModelCapabilityResolver.resolve(
-                provider = KnownProvider.fromUrl(config.url),
-                model = config.model,
+                provider = KnownProvider.fromUrl(openAiConfig.url),
+                model = openAiConfig.model,
                 onDevice = false, // LiteRT / on-device flag lands with #264
             )
-            val userMode = config.tokenSavingMode
+            val userMode = openAiConfig.tokenSavingMode
             val mode = ModelCapabilityResolver.effectiveTokenSavingMode(capability, userMode)
             val queryResult = toolRouter.getToolsForQuery(
                 query = text,
