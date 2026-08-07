@@ -6,6 +6,7 @@ import io.github.leogallego.ansiblejane.notification.IApprovalNotificationManage
 import io.github.leogallego.ansiblejane.platform.BackgroundWorker
 import io.github.leogallego.ansiblejane.platform.ConnectivityObserver
 import io.github.leogallego.ansiblejane.platform.DataStoreFactory
+import io.github.leogallego.ansiblejane.platform.DeviceResources
 import io.github.leogallego.ansiblejane.platform.NotificationManager
 import io.github.leogallego.ansiblejane.platform.PlatformUtils
 import io.github.leogallego.ansiblejane.platform.SecureKeyStorage
@@ -19,6 +20,7 @@ val platformModule = module {
     single { BackgroundWorker(androidContext()) }
     single { NotificationManager(androidContext()) }
     single { PlatformUtils(androidContext()) }
+    single { DeviceResources(androidContext()) }
     single<IApprovalNotificationManager> { ApprovalNotificationManager() }
 }
 
