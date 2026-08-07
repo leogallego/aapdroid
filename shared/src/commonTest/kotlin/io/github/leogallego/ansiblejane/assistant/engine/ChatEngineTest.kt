@@ -16,6 +16,7 @@ import kotlinx.coroutines.test.runTest
 import kotlinx.serialization.json.JsonObject
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertFalse
 import kotlin.test.assertTrue
 
 @OptIn(TestOnly::class)
@@ -161,7 +162,79 @@ class ChatEngineTest {
             provider.lastToolNames
         )
     }
+
+    @Test
+    fun `tool-call parse failure SHOULD retry once without tools`() = runTest {
+        val provider = ParseFailureThenTextProvider()
+        val tools = listOf(
+            io.github.leogallego.ansiblejane.assistant.tools.ToolSpec(
+                "list_hosts", "List hosts", kotlinx.serialization.json.JsonObject(emptyMap())
+            )
+        )
+        val engine = ChatEngine(provider, ToolExecutor(emptyList()))
+
+        engine.processMessage("how many hosts?", emptyList(), tools).test {
+            val delta = awaitItem()
+            assertTrue(delta is ChatEvent.TextDelta)
+            assertEquals("Plain text fallback", (delta as ChatEvent.TextDelta).text)
+
+            val tokenReport = awaitItem()
+            assertTrue(tokenReport is ChatEvent.TokenUsageReport)
+
+            val msg = awaitItem()
+            assertTrue(msg is ChatEvent.AssistantMessage)
+            assertEquals("Plain text fallback", (msg as ChatEvent.AssistantMessage).fullText)
+            awaitComplete()
+        }
+
+        assertEquals(2, provider.callCount)
+        assertEquals(listOf(1, 0), provider.toolCountsPerCall)
+    }
+
+    @Test
+    fun `isToolCallParseFailure SHOULD detect parse errors and ignore auth IO`() {
+        assertTrue(ChatEngine.isToolCallParseFailure(IllegalArgumentException("Failed to parse tool call JSON")))
+        assertTrue(ChatEngine.isToolCallParseFailure(RuntimeException("malformed tool arguments")))
+        assertFalse(
+            ChatEngine.isToolCallParseFailure(
+                io.github.leogallego.ansiblejane.assistant.llm.LlmAuthException("bad key")
+            )
+        )
+        assertFalse(
+            ChatEngine.isToolCallParseFailure(
+                kotlinx.io.IOException("connection reset")
+            )
+        )
+    }
+
+    @Test
+    fun `isToolCallParseFailure SHOULD ignore non-tool parse and serialization errors`() {
+        assertFalse(
+            ChatEngine.isToolCallParseFailure(
+                IllegalArgumentException("Failed to parse config file")
+            )
+        )
+        assertFalse(
+            ChatEngine.isToolCallParseFailure(
+                RuntimeException("JSON serialization of settings failed")
+            )
+        )
+        assertFalse(
+            ChatEngine.isToolCallParseFailure(
+                FakeJsonDecodingException("Unexpected token in URL path")
+            )
+        )
+        // Tool context + parse still matches
+        assertTrue(
+            ChatEngine.isToolCallParseFailure(
+                FakeJsonDecodingException("Unexpected token in tool_call arguments")
+            )
+        )
+    }
 }
+
+/** Name ends with JsonDecodingException so simpleName matches the detector's class check. */
+private class FakeJsonDecodingException(message: String) : Exception(message)
 
 private class CapturingLlmProvider : LlmProvider {
     var lastToolNames: List<String> = emptyList()
@@ -211,6 +284,30 @@ private class FakeLlmProvider(
                 content = tc.arguments
             ))
         }
+        emit(StreamFrame.End(finishReason = "stop"))
+    }
+
+    override fun isAvailable(): Boolean = true
+    override fun modelInfo(): ModelInfo = ModelInfo("fake-model")
+    override fun close() {}
+}
+
+/** First call with tools throws a parse-like error; second call (no tools) returns text. */
+private class ParseFailureThenTextProvider : LlmProvider {
+    var callCount = 0
+    val toolCountsPerCall = mutableListOf<Int>()
+
+    override fun generateStream(
+        prompt: Prompt,
+        tools: List<ToolDescriptor>,
+        maxTokens: Int?
+    ): Flow<StreamFrame> = flow {
+        toolCountsPerCall.add(tools.size)
+        callCount++
+        if (callCount == 1 && tools.isNotEmpty()) {
+            throw IllegalArgumentException("Failed to parse tool call JSON")
+        }
+        emit(StreamFrame.TextDelta("Plain text fallback"))
         emit(StreamFrame.End(finishReason = "stop"))
     }
 

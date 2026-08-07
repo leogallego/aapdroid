@@ -1,5 +1,6 @@
 package io.github.leogallego.ansiblejane.assistant.engine
 
+import ai.koog.agents.core.tools.ToolDescriptor
 import ai.koog.prompt.Prompt
 import ai.koog.prompt.message.Message
 import ai.koog.prompt.message.MessagePart
@@ -74,23 +75,30 @@ class ChatEngine(
             // #439: stable alphabetical order so LLM KV/prefix caches can reuse tool schemas
             // #330: schema compression by TokenSavingMode
             val compression = tokenSavingMode.toSchemaCompression()
-            val toolDescriptors = tools
+            var activeToolDescriptors = tools
                 .sortedBy { it.name }
                 .map { it.toToolDescriptor(compression) }
-            val toolSchemaChars = toolDescriptors.sumOf {
-                it.name.length + it.description.length +
-                    it.requiredParameters.sumOf { p -> p.name.length + p.description.length + 20 } +
-                    it.optionalParameters.sumOf { p -> p.name.length + p.description.length + 20 }
+            fun logPayload(descriptors: List<ToolDescriptor>) {
+                val toolSchemaChars = descriptors.sumOf {
+                    it.name.length + it.description.length +
+                        it.requiredParameters.sumOf { p -> p.name.length + p.description.length + 20 } +
+                        it.optionalParameters.sumOf { p -> p.name.length + p.description.length + 20 }
+                }
+                val msgChars = messages.sumOf { it.content.length }
+                Log.d(
+                    TAG,
+                    "PAYLOAD: ${descriptors.size} tools (~${toolSchemaChars} schema chars), " +
+                        "${messages.size} messages (~${msgChars} msg chars), mode=$tokenSavingMode/$compression, " +
+                        "total ~${toolSchemaChars + msgChars} chars"
+                )
+                Log.d(TAG, "PAYLOAD tools: ${descriptors.map { it.name }}")
             }
-            val msgChars = messages.sumOf { it.content.length }
-            Log.d(TAG, "PAYLOAD: ${tools.size} tools (~${toolSchemaChars} schema chars), " +
-                "${messages.size} messages (~${msgChars} msg chars), mode=$tokenSavingMode/$compression, " +
-                "total ~${toolSchemaChars + msgChars} chars")
-            Log.d(TAG, "PAYLOAD tools: ${tools.map { it.name }}")
+            logPayload(activeToolDescriptors)
             var iterations = 0
             var totalToolCalls = 0
             val toolCallHistory = mutableListOf<List<String>>()
             val softLimit = (contextChars * 0.9).toInt()
+            var retriedWithoutTools = false
 
             loop@ while (iterations < maxIterations) {
                 iterations++
@@ -103,45 +111,64 @@ class ChatEngine(
                 trimMessages(messages, contextChars)
                 val prompt = buildPrompt(messages)
 
-                provider.generateStream(prompt, toolDescriptors, maxTokens).collect { frame ->
-                    Log.d(TAG, "FRAME: ${frame::class.simpleName} " +
-                        when (frame) {
-                            is StreamFrame.TextDelta -> "text=${frame.text.take(50)}"
-                            is StreamFrame.ToolCallDelta -> "id=${frame.id} name=${frame.name} content=${frame.content?.take(50)}"
-                            is StreamFrame.ToolCallComplete -> "id=${frame.id} name=${frame.name} content=${frame.content.take(50)}"
-                            is StreamFrame.End -> ""
-                            else -> frame.toString().take(80)
-                        }
-                    )
-                    when (frame) {
-                        is StreamFrame.TextDelta -> {
-                            textBuilder.append(frame.text)
-                            emit(ChatEvent.TextDelta(frame.text))
-                        }
-                        is StreamFrame.ToolCallDelta -> {
-                            val id = frame.id ?: "tool_${syntheticIdCounter}"
-                            val tc = pendingToolCalls.getOrPut(id) { MutableToolCall(id) }
-                            if (frame.name != null) tc.name = frame.name
-                            if (frame.content != null) tc.args.append(frame.content)
-                        }
-                        is StreamFrame.ToolCallComplete -> {
-                            val id = frame.id ?: "tool_${syntheticIdCounter++}"
-                            val tc = pendingToolCalls.getOrPut(id) { MutableToolCall(id) }
-                            tc.name = frame.name
-                            tc.args.clear()
-                            tc.args.append(frame.content)
-                        }
-                        is StreamFrame.End -> {
-                            val meta = frame.metaInfo
-                            if (meta.totalTokensCount != null) {
-                                accInputTokens += meta.inputTokensCount ?: 0
-                                accOutputTokens += meta.outputTokensCount ?: 0
-                                accTotalTokens += meta.totalTokensCount ?: 0
-                                anyRealUsage = true
+                try {
+                    provider.generateStream(prompt, activeToolDescriptors, maxTokens).collect { frame ->
+                        Log.d(TAG, "FRAME: ${frame::class.simpleName} " +
+                            when (frame) {
+                                is StreamFrame.TextDelta -> "text=${frame.text.take(50)}"
+                                is StreamFrame.ToolCallDelta -> "id=${frame.id} name=${frame.name} content=${frame.content?.take(50)}"
+                                is StreamFrame.ToolCallComplete -> "id=${frame.id} name=${frame.name} content=${frame.content.take(50)}"
+                                is StreamFrame.End -> ""
+                                else -> frame.toString().take(80)
                             }
+                        )
+                        when (frame) {
+                            is StreamFrame.TextDelta -> {
+                                textBuilder.append(frame.text)
+                                emit(ChatEvent.TextDelta(frame.text))
+                            }
+                            is StreamFrame.ToolCallDelta -> {
+                                val id = frame.id ?: "tool_${syntheticIdCounter}"
+                                val tc = pendingToolCalls.getOrPut(id) { MutableToolCall(id) }
+                                if (frame.name != null) tc.name = frame.name
+                                if (frame.content != null) tc.args.append(frame.content)
+                            }
+                            is StreamFrame.ToolCallComplete -> {
+                                val id = frame.id ?: "tool_${syntheticIdCounter++}"
+                                val tc = pendingToolCalls.getOrPut(id) { MutableToolCall(id) }
+                                tc.name = frame.name
+                                tc.args.clear()
+                                tc.args.append(frame.content)
+                            }
+                            is StreamFrame.End -> {
+                                val meta = frame.metaInfo
+                                if (meta.totalTokensCount != null) {
+                                    accInputTokens += meta.inputTokensCount ?: 0
+                                    accOutputTokens += meta.outputTokensCount ?: 0
+                                    accTotalTokens += meta.totalTokensCount ?: 0
+                                    anyRealUsage = true
+                                }
+                            }
+                            else -> { /* ReasoningDelta etc — ignore */ }
                         }
-                        else -> { /* ReasoningDelta etc — ignore */ }
                     }
+                } catch (e: CancellationException) {
+                    throw e
+                } catch (e: Exception) {
+                    // #453: small/local models often emit malformed tool-call frames.
+                    // Retry once without tools so the model can answer in plain text.
+                    if (!retriedWithoutTools &&
+                        activeToolDescriptors.isNotEmpty() &&
+                        isToolCallParseFailure(e)
+                    ) {
+                        Log.w(TAG, "Tool-call parse failure — retrying without tools: ${e.message}")
+                        retriedWithoutTools = true
+                        activeToolDescriptors = emptyList()
+                        logPayload(activeToolDescriptors)
+                        iterations-- // do not consume an agentic iteration for the failed attempt
+                        continue@loop
+                    }
+                    throw e
                 }
 
                 val completedCalls = pendingToolCalls.values
@@ -507,6 +534,52 @@ class ChatEngine(
     companion object {
         private const val TAG = "ChatEngine"
         private const val DEFAULT_CONTEXT_CHARS = 16_000
+
+        /**
+         * Detects malformed **tool-call** parse failures from providers or serializers (#453).
+         * Requires tool/function-call context so unrelated parse/serialization errors
+         * (URL, config, settings) are not silently retried without tools.
+         * Auth, timeout, server, and IO errors are excluded so they surface normally.
+         */
+        internal fun isToolCallParseFailure(error: Throwable): Boolean {
+            if (error is LlmAuthException ||
+                error is LlmRateLimitException ||
+                error is LlmTimeoutException ||
+                error is LlmServerException ||
+                error is IOException
+            ) {
+                return false
+            }
+            val msg = (error.message ?: "").lowercase()
+            val name = error::class.simpleName?.lowercase() ?: ""
+            val hasToolContext = TOOL_CALL_CONTEXT_MARKERS.any { it in msg }
+            if (!hasToolContext) return false
+
+            val looksLikeParse = "parse" in msg ||
+                "malformed" in msg ||
+                "json" in msg ||
+                "invalid" in msg ||
+                "unexpected" in msg ||
+                "serialization" in name ||
+                "jsondecoding" in name ||
+                "jsonparsing" in name
+            return looksLikeParse
+        }
+
+        private val TOOL_CALL_CONTEXT_MARKERS = listOf(
+            "tool call",
+            "tool_call",
+            "tool-call",
+            "toolcall",
+            "function call",
+            "function_call",
+            "function-call",
+            "tool argument",
+            "tool arguments",
+            "tool args",
+            "arguments for tool",
+        )
+
         const val SYSTEM_PROMPT = """You are a concise AI assistant for Ansible Automation Platform (AAP). Rules:
 - NEVER fabricate, invent, or guess data. Only present information returned by tool calls. If a tool call fails, report the error — do not make up results. If you have no tool to answer a question, say so clearly.
 - You have local tools (list_jobs, launch_job, etc.) that connect directly to the AAP instance and MCP tools (hosts_list, jobs_retrieve, etc.) for extended capabilities. Prefer local tools when available.

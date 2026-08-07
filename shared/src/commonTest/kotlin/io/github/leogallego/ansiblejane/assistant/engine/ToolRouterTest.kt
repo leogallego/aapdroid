@@ -2186,4 +2186,132 @@ class ToolRouterTest {
         assertTrue("list_hosts" in names, "Routed local tool must not be displaced by unrouted MCP; got $names")
         assertTrue(names.size <= ToolRouter.TOP_K_TOKEN_SAVER)
     }
+
+    // --- #453 ModelCapability Simple tier ---
+
+    private fun localToolWithSchema(
+        name: String,
+        description: String,
+        schema: JsonObject,
+    ) = object : LocalTool {
+        override val spec = ToolSpec(name, description, schema)
+        override val isDestructive = false
+        override suspend fun execute(args: JsonObject) = ToolResult(success = true)
+    }
+
+    private fun fatSchema(): JsonObject = JsonObject(
+        mapOf(
+            "type" to kotlinx.serialization.json.JsonPrimitive("object"),
+            "properties" to JsonObject(
+                (1..6).associate { i ->
+                    "param_$i" to JsonObject(
+                        mapOf("type" to kotlinx.serialization.json.JsonPrimitive("string"))
+                    )
+                }
+            )
+        )
+    )
+
+    @Test
+    fun `Simple capability SHOULD exclude MCP tools`() {
+        router.registerLocalTools(
+            listOf(localTool("list_hosts", description = "List hosts in inventory"))
+        )
+        router.registerMcpTools(
+            listOf(
+                mcpTool("hosts_list", toolset = "inventory_management"),
+                mcpTool("inventories_list", toolset = "inventory_management"),
+            )
+        )
+
+        val full = router.getToolsForQuery(
+            "how many hosts?",
+            listOf(readWriteConfig),
+            capability = ModelCapability.Full,
+        ).tools.map { it.spec.name }
+        val simple = router.getToolsForQuery(
+            "how many hosts?",
+            listOf(readWriteConfig),
+            capability = ModelCapability.Simple,
+        ).tools
+
+        assertTrue(simple.all { it is LocalTool }, "Simple must be local-only; got ${simple.map { it.spec.name }}")
+        assertFalse(simple.any { it.spec.name == "hosts_list" })
+        // Full may include MCP when routed; at least local remains
+        assertTrue("list_hosts" in full || "list_hosts" in simple.map { it.spec.name })
+    }
+
+    @Test
+    fun `Simple capability SHOULD filter complex-schema tools`() {
+        val simpleHost = localToolWithSchema(
+            "list_hosts",
+            "List hosts in inventory",
+            JsonObject(emptyMap())
+        )
+        val fatFacts = localToolWithSchema(
+            "get_host_facts",
+            "Get host facts for hosts",
+            fatSchema()
+        )
+        router.registerLocalTools(listOf(simpleHost, fatFacts))
+
+        val names = router.getToolsForQuery(
+            "show hosts facts",
+            capability = ModelCapability.Simple,
+        ).tools.map { it.spec.name }
+
+        assertTrue("list_hosts" in names || names.isEmpty() || "get_host_facts" !in names)
+        assertFalse("get_host_facts" in names, "Complex-schema tool must be filtered for Simple; got $names")
+    }
+
+    @Test
+    fun `Simple capability SHOULD hard-cap meta-search results at 10`() {
+        // Meta-search can return up to MAX_META_SEARCH_RESULTS (20); Simple must hard-cap at 10.
+        // Avoid category keywords (host/job/…) so we hit no-category description overlap.
+        val metaOnly = (1..15).map { i ->
+            localTool("widget_frobulator_$i", description = "widget frobulator zinger utility $i")
+        }
+        router.registerLocalTools(metaOnly)
+
+        val result = router.getToolsForQuery(
+            "widget frobulator zinger",
+            capability = ModelCapability.Simple,
+        )
+        assertTrue(result.tools.isNotEmpty(), "Expected meta-search hits for Simple hard-cap test")
+        assertTrue(
+            result.tools.size <= ModelCapabilityResolver.SIMPLE_HARD_CAP,
+            "Simple hard cap expected <= 10, got ${result.tools.size}"
+        )
+        assertTrue(result.tools.all { it is LocalTool })
+    }
+
+    @Test
+    fun `Full capability SHOULD not regress post-330 host cherry-pick`() {
+        router.registerLocalTools(inventoryFixtureTools())
+
+        val names = router.getToolsForQuery(
+            "how many hosts?",
+            tokenSavingMode = TokenSavingMode.STANDARD,
+            capability = ModelCapability.Full,
+        ).tools.map { it.spec.name }.toSet()
+
+        assertTrue("list_hosts" in names)
+        assertFalse("list_labels" in names)
+        assertTrue(names.size <= ToolRouter.TOP_K_STANDARD)
+    }
+
+    @Test
+    fun `Simple capability with STANDARD user mode SHOULD still use aggressive top-K`() {
+        router.registerLocalTools(inventoryFixtureTools())
+
+        val names = router.getToolsForQuery(
+            "show inventory hosts and groups and facts and sources",
+            tokenSavingMode = TokenSavingMode.STANDARD,
+            capability = ModelCapability.Simple,
+        ).tools
+
+        assertTrue(names.size <= ToolRouter.TOP_K_TOKEN_SAVER)
+        assertTrue(names.size <= ModelCapabilityResolver.SIMPLE_HARD_CAP)
+        assertTrue(names.all { it is LocalTool })
+    }
 }

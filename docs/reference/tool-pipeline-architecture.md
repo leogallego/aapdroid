@@ -168,17 +168,31 @@ MCP servers with `readOnly: true` in config have write tools filtered out. Detec
 
 Users can toggle individual tools via Settings → Local Tools and MCP Servers tabs. State persisted via `IAssistantRepository.saveToolState()`.
 
-## Token Optimization
+## Token Optimization (#330)
 
-Three tiers control schema verbosity and tool count:
+Three tiers control schema verbosity and soft top-K tool count:
 
-| TokenSavingMode | Description | MCP Tool Cap | Context Chars |
-|-----------------|------------|-------------|--------------|
-| STANDARD | Full conversation with LLM, tools when relevant | 10 | 16,000 |
-| TOKEN_SAVER | Short replies for general chat, tools when relevant | 5 | 8,000 |
-| TOOLS_ONLY | Tools only — no general conversation | 3 | 4,000 |
+| TokenSavingMode | Schema compression | Soft top-K | MCP Tool Cap (ViewModel) | Context Chars |
+|-----------------|-------------------|------------|--------------------------|--------------|
+| STANDARD | FULL (required + optional params) | 5 | 10 | 16,000 |
+| TOKEN_SAVER | STRIPPED (required only; optionals in description) | 3 | 5 | 8,000 |
+| TOOLS_ONLY | STRIPPED (same as TOKEN_SAVER for schemas) | 3 | 3 | 4,000 |
 
-Schema compaction handled by `ToolDescriptorMapping.compactSchema()`.
+Wired via `TokenSavingMode.toSchemaCompression()` → `ToolSpec.toToolDescriptor(SchemaCompressionLevel)`.
+
+## Model Capability Tiers (#453)
+
+`ModelCapability` adapts tool count/complexity to the active model **before** schemas are sent:
+
+| Tier | Typical sources | ToolRouter policy | TokenSavingMode precedence |
+|------|-----------------|-------------------|----------------------------|
+| **Full** | OpenAI, Gemini, OpenRouter, Groq; large self-hosted (≥32B) | Post-#330 category routing + soft top-K; MCP allowed | Honor user's mode |
+| **Simple** | Small Ollama / unknown self-hosted; `onDevice=true` (#264 stub) | Local only (no MCP); schema-complexity filter; hard cap 10; prefer safe allowlist | Tier ceiling = `TOOLS_ONLY` (user cannot relax) |
+
+Resolution: `ModelCapabilityResolver.resolve(KnownProvider, model, onDevice)`.
+ChatEngine retries once without tools on tool-call parse failures (important for Simple/local models).
+
+LiteRT / on-device inference itself remains #264.
 
 ## Known Issues
 
@@ -186,4 +200,4 @@ Schema compaction handled by `ToolDescriptorMapping.compactSchema()`.
 
 ## Planned Improvements
 
-See issue #120 for the 5-phase improvement plan covering semantic search (Model2Vec), model capability tiers, AAP role filtering, and token optimization. See issue #30 for local LLM backend integration.
+See issue #120 for the broader plan (hybrid ranking / Model2Vec → #449, ToolRouter extract → #452). On-device LiteRT → #264.
