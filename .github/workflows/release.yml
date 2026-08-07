@@ -559,3 +559,11 @@ jobs:
             ansible-jane-desktop-macos-*.dmg
             ansible-jane-desktop-windows-*.msi
           prerelease: ${{ contains(env.RELEASE_TAG, '-') }}
+
+      # workflow_dispatch (unlike workflow_run) still fires when this job is re-run
+      # after a failed APK attempt — that was how alpha.1 missed F-Droid indexing.
+      - name: Trigger F-Droid repo update
+        if: needs.apk.result == 'success'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: gh workflow run fdroid-repo.yml --ref main
