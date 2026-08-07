@@ -177,7 +177,7 @@ data class OnDevice(
 - **PR1:** `resolve(..., onDevice = true)` → always `Simple` for every on-device model (including 12B if downloaded). Matches #453 today.  
 - **PR2 must extend #453** — see [12B policy vs Simple](#12b-policy-vs-453-simple). Until that lands, 12B must not claim MCP / TOKEN_SAVER behavior.  
 - Device tier UI: show GOOD/OK/POOR; **block download only on insufficient disk**; POOR is a warning  
-- **Context budget:** when active provider is OnDevice, set ChatEngine `contextChars` from the catalog model’s `defaultContextTokens` (approx chars ≈ tokens for MVP, or tokens×4 if we keep char-based trim) so E4B stays near 4K and 12B near 8K — do not leave cloud TOOLS_ONLY’s 4K-char budget as the only knob once LARGE is active in PR2.
+- **Context budget:** when active provider is OnDevice, set ChatEngine `contextChars = catalog.defaultContextTokens` (Jane’s existing char budgets are already token-shaped: 4K/8K/16K). E4B → 4096, 12B → 8192. Do not leave cloud TOOLS_ONLY’s 4K budget as the only knob once LARGE is active in PR2.
 
 ## PR1 — Inference bridge (sync / manual)
 
@@ -297,7 +297,15 @@ enum class OnDeviceTier { E4B, LARGE }  // from catalog
 | Schemas | Stripped (#330) | Per effective mode (#330 mapping) |
 | `onDevice` | true | true |
 
-Do **not** fake 12B as `ModelCapability.Full` — that drops hard caps and treatson-device like frontier cloud.
+Do **not** fake 12B as `ModelCapability.Full` — that drops hard caps and treats on-device like frontier cloud.
+
+PR2 must update more than the enum:
+
+1. `ModelCapabilityResolver.resolve` — accept catalog `OnDeviceTier` (or modelId → tier); `KnownProvider.LOCAL` must be exhaustive in the `when` (compile break otherwise).  
+2. `effectiveTokenSavingMode` — `OnDeviceLarge` ceiling = `TOKEN_SAVER`.  
+3. `ToolRouter` — today `capability != Simple` admits MCP with no on-device hard cap. Add an `OnDeviceLarge` branch: allow MCP, hard-cap total tools at 15, keep complexity filter optional (or lighter than Simple).  
+4. `AssistantViewModel` MCP budget — align with ≤5 for OnDeviceLarge.  
+5. Tests in `ModelCapabilityTest` / `ToolRouterTest` for both tiers.
 
 PR1 does not implement `OnDeviceLarge`; downloading 12B in PR1 still routes as Simple.
 
@@ -371,6 +379,18 @@ Fakes must implement `ILocalModelRepository`. No LiteRT types in `commonMain` te
 | Low | `DestructiveToolLookup` shown as static call | Fixed to injected instance |
 | Low | Polymorphic config migration | Noted serializer registration |
 | Low | GPU estimate formula omitted | Documented Kai/issue formula |
+
+### Pass 3 (2026-08-07) — conflict re-check
+
+| Check | Result |
+|-------|--------|
+| PR1 vs #453 `onDevice → Simple` | **Solved** — intentional; E4B and 12B both Simple until PR2 |
+| PR2 12B vs Simple no-MCP / TOOLS_ONLY | **Solved in design** — `OnDeviceLarge` + ToolRouter/VM/resolver touch list (not enum-only) |
+| Fake-as-`Full` anti-pattern | Explicitly forbidden |
+| Residual ambiguity | Locked `contextChars = defaultContextTokens`; no open OR left on that point |
+| Remaining risks (not conflicts) | LiteRT schema-only spike; pinned HF URLs/SHAs at implement time; async tool-event wiring |
+
+**Verdict:** Conflict solved. Spec ready for implementation planning.
 
 ## References
 
