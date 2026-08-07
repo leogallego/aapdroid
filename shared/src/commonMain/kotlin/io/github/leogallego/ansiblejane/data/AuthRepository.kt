@@ -7,7 +7,7 @@ import io.github.leogallego.ansiblejane.network.AapApiClient
 import io.github.leogallego.ansiblejane.network.ApiVersionDetector
 import io.github.leogallego.ansiblejane.network.AuthEvents
 import io.github.leogallego.ansiblejane.network.IAapApiProvider
-import io.github.leogallego.ansiblejane.network.InstanceDiscovery
+import io.github.leogallego.ansiblejane.network.IInstanceDiscovery
 import io.github.leogallego.ansiblejane.network.createPlatformHttpClient
 import io.github.leogallego.ansiblejane.network.networkJson
 import io.ktor.client.plugins.HttpTimeout
@@ -24,7 +24,7 @@ import kotlinx.coroutines.launch
 class AuthRepository(
     private val tokenManager: ITokenManager,
     private val apiProvider: IAapApiProvider,
-    private val instanceDiscovery: InstanceDiscovery,
+    private val instanceDiscovery: IInstanceDiscovery,
     private val scope: CoroutineScope
 ) : IAuthRepository {
 

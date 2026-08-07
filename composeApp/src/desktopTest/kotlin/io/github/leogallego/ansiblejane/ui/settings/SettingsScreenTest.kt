@@ -9,11 +9,12 @@ import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performScrollTo
 import androidx.compose.ui.test.ComposeUiTest
 import androidx.compose.ui.test.runComposeUiTest
+import io.github.leogallego.ansiblejane.assistant.data.ModelFetcher
 import io.github.leogallego.ansiblejane.assistant.engine.ToolRouter
 import io.github.leogallego.ansiblejane.desktopTestKoinModule
+import io.github.leogallego.ansiblejane.fakes.FakeAssistantRepository
 import io.github.leogallego.ansiblejane.fakes.FakeAuthRepository
 import io.github.leogallego.ansiblejane.fakes.FakeMcpConnectionRepository
-import io.github.leogallego.ansiblejane.fakes.FakeAssistantRepository
 import io.github.leogallego.ansiblejane.fakes.FakeTokenManager
 import io.github.leogallego.ansiblejane.fakes.FakeToolManifestRepository
 import io.github.leogallego.ansiblejane.fakes.FakeUserPreferencesRepository
@@ -21,6 +22,12 @@ import io.github.leogallego.ansiblejane.model.AapInstance
 import io.github.leogallego.ansiblejane.presentation.settings.SettingsViewModel
 import io.github.leogallego.ansiblejane.setupMainDispatcher
 import io.github.leogallego.ansiblejane.tearDownMainDispatcher
+import io.ktor.client.HttpClient
+import io.ktor.client.engine.mock.MockEngine
+import io.ktor.client.engine.mock.respond
+import io.ktor.http.HttpHeaders
+import io.ktor.http.HttpStatusCode
+import io.ktor.http.headersOf
 import kotlinx.serialization.json.Json
 import org.koin.core.context.startKoin
 import org.koin.core.context.stopKoin
@@ -72,7 +79,20 @@ class SettingsScreenTest {
         mcpConnectionRepository = mcpConnectionRepository,
         manifestRepository = FakeToolManifestRepository(),
         toolRouter = ToolRouter(initialLocalTools = emptyList(), repository = fakeAssistantRepo),
-        json = json
+        json = json,
+        modelFetcher = ModelFetcher(json) { _ ->
+            HttpClient(MockEngine) {
+                engine {
+                    addHandler {
+                        respond(
+                            content = """{"data":[]}""",
+                            status = HttpStatusCode.OK,
+                            headers = headersOf(HttpHeaders.ContentType, "application/json")
+                        )
+                    }
+                }
+            }
+        }
     )
 
     private fun ComposeUiTest.setUpScreen(viewModel: SettingsViewModel = createViewModel()) {

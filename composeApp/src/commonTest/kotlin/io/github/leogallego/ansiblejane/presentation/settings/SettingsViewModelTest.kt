@@ -1,21 +1,28 @@
 package io.github.leogallego.ansiblejane.presentation.settings
 
 import app.cash.turbine.test
-import io.github.leogallego.ansiblejane.fakes.FakeAuthRepository
-import io.github.leogallego.ansiblejane.fakes.FakeMcpConnectionRepository
-import io.github.leogallego.ansiblejane.fakes.FakeAssistantRepository
-import io.github.leogallego.ansiblejane.fakes.FakeTokenManager
-import io.github.leogallego.ansiblejane.fakes.FakeUserPreferencesRepository
-import io.github.leogallego.ansiblejane.model.AapInstance
 import io.github.leogallego.ansiblejane.assistant.data.LlmProviderConfig
+import io.github.leogallego.ansiblejane.assistant.data.ModelFetcher
 import io.github.leogallego.ansiblejane.assistant.engine.ToolRouter
 import io.github.leogallego.ansiblejane.assistant.tools.LocalTool
 import io.github.leogallego.ansiblejane.assistant.tools.ToolResult
 import io.github.leogallego.ansiblejane.assistant.tools.ToolSpec
 import io.github.leogallego.ansiblejane.assistant.tools.ToolSource
-import io.github.leogallego.ansiblejane.ui.components.ThemeMode
+import io.github.leogallego.ansiblejane.fakes.FakeAssistantRepository
+import io.github.leogallego.ansiblejane.fakes.FakeAuthRepository
+import io.github.leogallego.ansiblejane.fakes.FakeMcpConnectionRepository
+import io.github.leogallego.ansiblejane.fakes.FakeTokenManager
+import io.github.leogallego.ansiblejane.fakes.FakeUserPreferencesRepository
+import io.github.leogallego.ansiblejane.model.AapInstance
 import io.github.leogallego.ansiblejane.setupMainDispatcher
 import io.github.leogallego.ansiblejane.tearDownMainDispatcher
+import io.github.leogallego.ansiblejane.ui.components.ThemeMode
+import io.ktor.client.HttpClient
+import io.ktor.client.engine.mock.MockEngine
+import io.ktor.client.engine.mock.respond
+import io.ktor.http.HttpHeaders
+import io.ktor.http.HttpStatusCode
+import io.ktor.http.headersOf
 import kotlinx.coroutines.test.runTest
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonObject
@@ -79,7 +86,20 @@ class SettingsViewModelTest {
         mcpConnectionRepository = mcpConnectionRepository,
         manifestRepository = io.github.leogallego.ansiblejane.fakes.FakeToolManifestRepository(),
         toolRouter = ToolRouter(initialLocalTools = localTools, repository = fakeAssistantRepo),
-        json = json
+        json = json,
+        modelFetcher = ModelFetcher(json) { _ ->
+            HttpClient(MockEngine) {
+                engine {
+                    addHandler {
+                        respond(
+                            content = """{"data":[]}""",
+                            status = HttpStatusCode.OK,
+                            headers = headersOf(HttpHeaders.ContentType, "application/json")
+                        )
+                    }
+                }
+            }
+        }
     )
 
     @Test

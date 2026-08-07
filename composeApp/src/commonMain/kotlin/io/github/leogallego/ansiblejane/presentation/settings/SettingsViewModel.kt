@@ -40,7 +40,7 @@ class SettingsViewModel(
     private val manifestRepository: IToolManifestRepository,
     private val toolRouter: ToolRouter,
     private val json: Json,
-    private val modelFetcher: ModelFetcher = ModelFetcher(json)
+    private val modelFetcher: ModelFetcher
 ) : ViewModel() {
 
     private val _uiState = MutableStateFlow<SettingsUiState>(SettingsUiState.Loading)

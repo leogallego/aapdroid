@@ -118,7 +118,7 @@ class McpServerManager(
         _mcpTools.value = tools
     }
 
-    suspend fun ensureConnected(serverLabel: String): Client {
+    internal suspend fun ensureConnected(serverLabel: String): Client {
         synchronized(this) { clients[serverLabel] }?.let { return it.client }
 
         val mutex = synchronized(this) { connectionMutexes.getOrPut(serverLabel) { Mutex() } }

@@ -18,7 +18,6 @@ import io.github.leogallego.ansiblejane.presentation.templates.TemplatesViewMode
 import io.github.leogallego.ansiblejane.presentation.workflows.WorkflowJobStatusViewModel
 import io.github.leogallego.ansiblejane.presentation.workflows.WorkflowTemplateDetailViewModel
 import io.github.leogallego.ansiblejane.presentation.workflows.WorkflowTemplatesViewModel
-import io.github.leogallego.ansiblejane.assistant.data.ModelFetcher
 import io.github.leogallego.ansiblejane.assistant.presentation.AssistantViewModel
 import io.github.leogallego.ansiblejane.assistant.tools.LocalTool
 import io.github.leogallego.ansiblejane.presentation.settings.SettingsViewModel
@@ -71,7 +70,7 @@ val presentationModule = module {
             manifestRepository = get(),
             toolRouter = get(),
             json = get(),
-            modelFetcher = ModelFetcher(get())
+            modelFetcher = get()
         )
     }
 }

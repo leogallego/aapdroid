@@ -1,5 +1,6 @@
 package io.github.leogallego.ansiblejane.assistant.di
 
+import io.github.leogallego.ansiblejane.assistant.data.ModelFetcher
 import io.github.leogallego.ansiblejane.assistant.engine.ToolRouter
 import io.github.leogallego.ansiblejane.assistant.engine.toAapRole
 import io.github.leogallego.ansiblejane.assistant.tools.LocalTool
@@ -19,6 +20,8 @@ import org.koin.dsl.binds
 import org.koin.dsl.module
 
 val sharedAssistantModule = module {
+    single { ModelFetcher(json = get()) }
+
     single {
         McpServerManager(
             ktorClientFactory = { instance, serverConfig ->
