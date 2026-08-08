@@ -355,6 +355,75 @@ class ToolRouterTest {
         assertTrue(names.any { it.first == "hosts_create" && it.second.contains("[knowledge]") })
     }
 
+    // --- Issue #335: read-only allowlist (READ_SUFFIXES) ---
+
+    @Test
+    fun `SHOULD allow read-suffix MCP tools WHEN readOnly is true`() {
+        router.registerMcpTools(
+            listOf(
+                mcpTool("hosts_list", toolset = "inventory_management"),
+                mcpTool("hosts_retrieve", toolset = "inventory_management"),
+                mcpTool("hosts_read", toolset = "inventory_management"),
+            )
+        )
+        val hostNames = router.getToolsForQuery("list my hosts", listOf(readOnlyConfig)).tools
+            .map { it.spec.name }
+        assertTrue("hosts_list" in hostNames)
+        assertTrue("hosts_retrieve" in hostNames)
+        assertTrue("hosts_read" in hostNames)
+
+        router.registerMcpTools(
+            listOf(mcpTool("settings_getter", toolset = "platform_configuration"))
+        )
+        val settingsNames = router.getToolsForQuery("get settings", listOf(readOnlyConfig)).tools
+            .map { it.spec.name }
+        assertTrue("settings_getter" in settingsNames)
+    }
+
+    @Test
+    fun `SHOULD block non-read MCP verbs WHEN readOnly is true`() {
+        // Host-prefixed names so they would score into the inventory query if the gate failed
+        val tools = listOf(
+            mcpTool("hosts_list", toolset = "inventory_management"),
+            mcpTool("hosts_restart", toolset = "inventory_management"),
+            mcpTool("hosts_sync", toolset = "inventory_management"),
+            mcpTool("hosts_associate", toolset = "inventory_management"),
+            mcpTool("hosts_execute", toolset = "inventory_management"),
+            mcpTool("hosts_launch_create", toolset = "inventory_management"),
+            mcpTool("hosts_create", toolset = "inventory_management"),
+            mcpTool("hosts_mystery", toolset = "inventory_management"),
+        )
+        router.registerMcpTools(tools)
+        val names = router.getToolsForQuery("list my hosts", listOf(readOnlyConfig)).tools
+            .map { it.spec.name }
+
+        assertTrue("hosts_list" in names)
+        assertFalse("hosts_restart" in names)
+        assertFalse("hosts_sync" in names)
+        assertFalse("hosts_associate" in names)
+        assertFalse("hosts_execute" in names)
+        assertFalse("hosts_launch_create" in names)
+        assertFalse("hosts_create" in names)
+        assertFalse("hosts_mystery" in names)
+    }
+
+    @Test
+    fun `SHOULD keep non-read MCP verbs WHEN readOnly is false`() {
+        val tools = listOf(
+            mcpTool("hosts_list", toolset = "inventory_management"),
+            mcpTool("hosts_restart", toolset = "inventory_management"),
+            mcpTool("hosts_create", toolset = "inventory_management"),
+        )
+        router.registerMcpTools(tools)
+        val names = router.getToolsForQuery("list my hosts", listOf(readWriteConfig)).tools
+            .map { it.spec.name }
+
+        assertTrue("hosts_list" in names)
+        // Allowlist must not run when readOnly=false — write-ish verbs remain eligible
+        assertTrue("hosts_restart" in names)
+        assertTrue("hosts_create" in names)
+    }
+
     @Test
     fun `SHOULD select MCP inventory tools WHEN query mentions hosts`() {
         val tools = listOf(
@@ -1510,6 +1579,76 @@ class ToolRouterTest {
         assertTrue(router.isAutoDisabled("hosts_list", ToolSource.MCP))
         assertFalse(router.isAutoDisabled("users_list", ToolSource.MCP))
         assertFalse(router.isAutoDisabled("list_hosts", ToolSource.LOCAL))
+    }
+
+    // --- Issue #342: OVERLAP_MAPPING collisions + per-serverLabel auto-disable ---
+
+    @Test
+    fun `SHOULD auto-disable colliding users_list WHEN any overlapping local is active`() {
+        // list_users / list_platform_users / list_eda_users all map to users_list
+        router.registerLocalTools(
+            listOf(
+                localTool("list_users"),
+                localTool("list_platform_users"),
+                localTool("list_eda_users"),
+            )
+        )
+        router.registerMcpTools(
+            listOf(
+                mcpTool("users_list", "controller"),
+                mcpTool("users_list", "gateway"),
+            )
+        )
+
+        assertTrue(router.isAutoDisabled("users_list", ToolSource.MCP, "controller"))
+        assertTrue(router.isAutoDisabled("users_list", ToolSource.MCP, "gateway"))
+        assertFalse(router.isToolEnabled("users_list", ToolSource.MCP, "controller"))
+        assertFalse(router.isToolEnabled("users_list", ToolSource.MCP, "gateway"))
+    }
+
+    @Test
+    fun `SHOULD scope auto-disable to registered serverLabel WHEN two MCP servers share a name`() {
+        router.registerLocalTools(listOf(localTool("list_users")))
+        router.registerMcpTools(
+            listOf(
+                mcpTool("users_list", "aap"),
+                mcpTool("users_list", "eda"),
+                mcpTool("hosts_list", "custom"), // unrelated name on another server
+            )
+        )
+
+        assertTrue(router.isAutoDisabled("users_list", ToolSource.MCP, "aap"))
+        assertTrue(router.isAutoDisabled("users_list", ToolSource.MCP, "eda"))
+        // Server that never registered users_list must not inherit a global name-only disable
+        assertFalse(router.isAutoDisabled("users_list", ToolSource.MCP, "custom"))
+        assertTrue(router.isToolEnabled("users_list", ToolSource.MCP, "custom"))
+        assertTrue(router.isToolEnabled("hosts_list", ToolSource.MCP, "custom"))
+    }
+
+    @Test
+    fun `SHOULD keep users_list auto-disabled WHEN only one of the colliding locals remains`() {
+        // Policy (documented for #336 follow-up): any remaining overlapping local keeps
+        // users_list auto-disabled on registered servers. Per-service mapping is out of scope.
+        router.registerLocalTools(listOf(localTool("list_eda_users")))
+        router.registerMcpTools(
+            listOf(
+                mcpTool("users_list", "controller"),
+                mcpTool("users_list", "eda"),
+            )
+        )
+
+        assertTrue(router.isAutoDisabled("users_list", ToolSource.MCP, "controller"))
+        assertTrue(router.isAutoDisabled("users_list", ToolSource.MCP, "eda"))
+        assertFalse(router.isToolEnabled("users_list", ToolSource.MCP, "controller"))
+    }
+
+    @Test
+    fun `SHOULD not auto-disable users_list WHEN no overlapping locals are registered`() {
+        router.registerLocalTools(listOf(localTool("list_hosts")))
+        router.registerMcpTools(listOf(mcpTool("users_list", "aap")))
+
+        assertFalse(router.isAutoDisabled("users_list", ToolSource.MCP, "aap"))
+        assertTrue(router.isToolEnabled("users_list", ToolSource.MCP, "aap"))
     }
 
     @Test

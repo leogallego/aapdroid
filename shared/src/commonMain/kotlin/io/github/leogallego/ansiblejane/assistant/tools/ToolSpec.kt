@@ -21,6 +21,19 @@ sealed interface Tool {
     companion object {
         const val MAX_DESCRIPTION_CHARS = 300
 
+        /**
+         * Read-only MCP allowlist (#335). When a server is `readOnly`, only tools
+         * whose names end with one of these suffixes are exposed. Unknown verbs
+         * are blocked by default (safer than maintaining an exhaustive write list).
+         */
+        val READ_SUFFIXES = setOf(
+            "_list", "_retrieve", "_read", "_getter"
+        )
+
+        /**
+         * Known write/destructive suffixes. Used for [isDestructive] scoring and
+         * auditor role filtering — not for MCP `readOnly` hard gates (#335).
+         */
         val WRITE_SUFFIXES = setOf(
             "_create", "_update", "_delete",
             "_launch", "_relaunch", "_cancel",

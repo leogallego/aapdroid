@@ -294,6 +294,9 @@ class ToolRouter(
 
         private val WRITE_ACTIONS = Tool.WRITE_SUFFIXES
 
+        /** MCP readOnly allowlist — see [Tool.READ_SUFFIXES] (#335). */
+        private val READ_ACTIONS = Tool.READ_SUFFIXES
+
         private val STOP_WORDS = setOf(
             "list", "get", "show", "what", "are", "the", "is", "a", "an",
             "my", "all", "me", "how", "many", "which", "do", "i", "have",
@@ -481,22 +484,40 @@ class ToolRouter(
 
     fun isToolEnabled(toolName: String, source: ToolSource, serverLabel: String? = null): Boolean = synchronized(this) {
         val key = ToolKey(toolName, source, serverLabel)
-        val isAuto = isAutoDisabledByName(toolName, source)
+        val isAuto = isAutoDisabledByName(toolName, source, serverLabel)
         key !in userDisabled && (!isAuto || key in userEnabled)
     }
 
     fun isAutoDisabled(toolName: String, source: ToolSource, serverLabel: String? = null): Boolean = synchronized(this) {
-        isAutoDisabledByName(toolName, source)
+        isAutoDisabledByName(toolName, source, serverLabel)
     }
 
-    private fun isAutoDisabledByName(toolName: String, source: ToolSource): Boolean {
-        return autoDisabled.any { it.name == toolName && it.source == source }
+    /**
+     * Auto-disable match honors [serverLabel] (#342).
+     * - Exact label match, or unlabeled key (pre-MCP-registration fallback).
+     * - Null [serverLabel] query: true if the name is auto-disabled for any key
+     *   (callers that omit label, e.g. before servers are known).
+     */
+    private fun isAutoDisabledByName(
+        toolName: String,
+        source: ToolSource,
+        serverLabel: String?,
+    ): Boolean {
+        return autoDisabled.any { key ->
+            if (key.name != toolName || key.source != source) return@any false
+            when {
+                key.serverLabel == serverLabel -> true
+                key.serverLabel == null -> true // unlabeled applies to all servers
+                serverLabel == null -> true // any-server check when label omitted
+                else -> false
+            }
+        }
     }
 
     suspend fun toggleToolEnabled(toolName: String, source: ToolSource, serverLabel: String? = null, enabled: Boolean) {
         val snapshot = synchronized(this) {
             val key = ToolKey(toolName, source, serverLabel)
-            val isAuto = isAutoDisabledByName(toolName, source)
+            val isAuto = isAutoDisabledByName(toolName, source, serverLabel)
             if (isAuto) {
                 userDisabled.remove(key)
                 if (enabled) userEnabled.add(key) else userEnabled.remove(key)
@@ -594,8 +615,9 @@ class ToolRouter(
                 if (!isToolEnabled(tool.spec.name, ToolSource.MCP, tool.serverLabel)) continue
                 if (!passesRoleFilter(tool, aapRole)) continue
 
+                // #335: allowlist reads — unknown verbs blocked on readOnly servers
                 val passesReadOnly = tool.serverLabel !in readOnlyLabels ||
-                    WRITE_ACTIONS.none { action -> tool.spec.name.endsWith(action) }
+                    READ_ACTIONS.any { action -> tool.spec.name.endsWith(action) }
                 if (!passesReadOnly) continue
 
                 val toolToolset = tool.toolset
@@ -819,8 +841,9 @@ class ToolRouter(
         val enabledMcp = mcpTools.filter { tool ->
             isToolEnabled(tool.spec.name, ToolSource.MCP, tool.serverLabel) &&
                 passesRoleFilter(tool, aapRole) &&
+                // #335: allowlist reads — unknown verbs blocked on readOnly servers
                 (tool.serverLabel !in readOnlyLabels ||
-                    WRITE_ACTIONS.none { action -> tool.spec.name.endsWith(action) })
+                    READ_ACTIONS.any { action -> tool.spec.name.endsWith(action) })
         }
         return enabledLocal + enabledMcp
     }
@@ -911,15 +934,33 @@ class ToolRouter(
         result
     }
 
+    /**
+     * Auto-disable MCP tools that overlap with active locals (#342).
+     *
+     * When overlapping MCP tools are registered, keys include [Tool.serverLabel]
+     * so the same name on another server is not treated as disabled.
+     * Before MCP registration, unlabeled keys preserve pre-connect overlap checks.
+     *
+     * Per-service mapping (Controller vs Gateway vs EDA for shared names like
+     * `users_list`) is deferred — see #336 Phase 3 follow-up.
+     */
     private fun autoDisableOverlappingMcpTools() {
         autoDisabled.clear()
         val activeLocalNames = localTools.map { it.spec.name }.toSet()
+        val overlappingMcpNames = activeLocalNames
+            .flatMap { OVERLAP_MAPPING[it].orEmpty() }
+            .toSet()
         var disabledCount = 0
-        for (localName in activeLocalNames) {
-            val overlappingMcpNames = OVERLAP_MAPPING[localName] ?: continue
-            for (mcpName in overlappingMcpNames) {
+        for (mcpName in overlappingMcpNames) {
+            val registered = mcpTools.filter { it.spec.name == mcpName }
+            if (registered.isEmpty()) {
                 autoDisabled.add(ToolKey(mcpName, ToolSource.MCP))
                 disabledCount++
+            } else {
+                for (tool in registered) {
+                    autoDisabled.add(ToolKey(mcpName, ToolSource.MCP, tool.serverLabel))
+                    disabledCount++
+                }
             }
         }
         if (disabledCount > 0) {
