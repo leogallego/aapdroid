@@ -63,6 +63,9 @@ class SettingsViewModel(
             val configs = assistantRepository.loadAllLlmConfigs()
             val activeConfig = assistantRepository.loadLlmConfig()
             val initialActiveKey = assistantRepository.activeProviderKeyFlow.first()
+            // Snapshot before combine: a separate collector can emit while still Loading, and
+            // distinctUntilChanged would not replay — Ready would then miss persisted tokens.
+            val initialLocalContextTokens = assistantRepository.modelContextTokensFlow.first()
 
             // Unfiltered on purpose: Settings enable/disable UI lists every registered
             // tool. Chat routing applies auditor filtering via getRoutableTools / getToolsForQuery.
@@ -110,7 +113,8 @@ class SettingsViewModel(
                 val preservedLocalCatalog = (current as? SettingsUiState.Ready)?.localModelCatalog
                     ?: localModelCatalog
                 val preservedLocalContextTokens =
-                    (current as? SettingsUiState.Ready)?.localModelContextTokens ?: emptyMap()
+                    (current as? SettingsUiState.Ready)?.localModelContextTokens
+                        ?: initialLocalContextTokens
                 val preservedAvx2 = (current as? SettingsUiState.Ready)?.hasAvx2Support
                     ?: hasAvx2Support
 

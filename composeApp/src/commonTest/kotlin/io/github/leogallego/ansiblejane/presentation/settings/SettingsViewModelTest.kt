@@ -535,4 +535,14 @@ class SettingsViewModelTest {
         assertIs<LlmProviderConfig.OnDevice>(saved)
         assertEquals(8_192, saved.contextTokens)
     }
+
+    @Test
+    fun `persisted localModelContextTokens appear in Ready at init`() = runTest {
+        fakeAssistantRepo.setModelContextTokens("gemma-4-e4b-it", 8_192)
+        val viewModel = createViewModel()
+        advanceUntilIdle()
+
+        val ready = assertIs<SettingsUiState.Ready>(viewModel.uiState.value)
+        assertEquals(8_192, ready.localModelContextTokens["gemma-4-e4b-it"])
+    }
 }

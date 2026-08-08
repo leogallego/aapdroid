@@ -475,3 +475,4 @@ tombstones or "removed" markers.
 | 1.3.1 | 2026-08-05 | Document Android-only BackgroundWorker approval polling (#433) |
 | 1.3.2 | 2026-08-06 | Document `:baselineprofile` module + JUnit4 Macrobenchmark exception (#214) |
 | 1.3.3 | 2026-08-08 | Document on-device LLM behind `LlmProvider` + `ILocalModelRepository` (#264) |
+| 1.3.4 | 2026-08-08 | Document configurable on-device LiteRT context window (#470) |
