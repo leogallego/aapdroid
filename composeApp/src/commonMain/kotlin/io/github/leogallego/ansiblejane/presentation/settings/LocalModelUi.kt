@@ -6,6 +6,7 @@ import aapremotecontrol.composeapp.generated.resources.agent_local_download_fail
 import aapremotecontrol.composeapp.generated.resources.agent_local_download_network
 import aapremotecontrol.composeapp.generated.resources.agent_local_download_timeout
 import aapremotecontrol.composeapp.generated.resources.agent_local_hash_mismatch
+import aapremotecontrol.composeapp.generated.resources.agent_local_import_failed
 import io.github.leogallego.ansiblejane.assistant.local.DevicePerformance
 import io.github.leogallego.ansiblejane.assistant.local.LocalModel
 import io.github.leogallego.ansiblejane.assistant.local.LocalModelDownloadErrorKind
@@ -35,6 +36,7 @@ sealed interface LocalModelDownloadUiState {
         val modelId: String,
         val bytesReceived: Long,
         val totalBytes: Long,
+        val isImport: Boolean = false,
     ) : LocalModelDownloadUiState
 
     data class Succeeded(val modelId: String) : LocalModelDownloadUiState
@@ -65,6 +67,7 @@ fun LocalModelDownloadState.toUi(): LocalModelDownloadUiState = when (this) {
         modelId = modelId,
         bytesReceived = bytesReceived,
         totalBytes = totalBytes,
+        isImport = isImport,
     )
     is LocalModelDownloadState.Succeeded -> LocalModelDownloadUiState.Succeeded(modelId)
     is LocalModelDownloadState.Error -> LocalModelDownloadUiState.Error(
@@ -78,6 +81,7 @@ fun LocalModelDownloadErrorKind.toUiMessage(): StringResource = when (this) {
     LocalModelDownloadErrorKind.HASH -> Res.string.agent_local_hash_mismatch
     LocalModelDownloadErrorKind.TIMEOUT -> Res.string.agent_local_download_timeout
     LocalModelDownloadErrorKind.NETWORK -> Res.string.agent_local_download_network
+    LocalModelDownloadErrorKind.IMPORT -> Res.string.agent_local_import_failed
     LocalModelDownloadErrorKind.OTHER -> Res.string.agent_local_download_failed
 }
 

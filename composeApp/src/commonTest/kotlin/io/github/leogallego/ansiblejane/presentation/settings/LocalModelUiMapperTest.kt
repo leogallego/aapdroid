@@ -6,12 +6,14 @@ import aapremotecontrol.composeapp.generated.resources.agent_local_download_fail
 import aapremotecontrol.composeapp.generated.resources.agent_local_download_network
 import aapremotecontrol.composeapp.generated.resources.agent_local_download_timeout
 import aapremotecontrol.composeapp.generated.resources.agent_local_hash_mismatch
+import aapremotecontrol.composeapp.generated.resources.agent_local_import_failed
 import io.github.leogallego.ansiblejane.assistant.local.DevicePerformance
 import io.github.leogallego.ansiblejane.assistant.local.LocalModelDownloadErrorKind
 import io.github.leogallego.ansiblejane.assistant.local.LocalModelDownloadState
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertIs
+import kotlin.test.assertTrue
 
 class LocalModelUiMapperTest {
 
@@ -34,6 +36,10 @@ class LocalModelUiMapperTest {
             LocalModelDownloadErrorKind.NETWORK.toUiMessage(),
         )
         assertEquals(
+            Res.string.agent_local_import_failed,
+            LocalModelDownloadErrorKind.IMPORT.toUiMessage(),
+        )
+        assertEquals(
             Res.string.agent_local_download_failed,
             LocalModelDownloadErrorKind.OTHER.toUiMessage(),
         )
@@ -45,9 +51,11 @@ class LocalModelUiMapperTest {
             modelId = "gemma-4-e4b-it",
             bytesReceived = 50,
             totalBytes = 100,
+            isImport = true,
         ).toUi()
         assertIs<LocalModelDownloadUiState.Downloading>(downloading)
         assertEquals(50, downloading.bytesReceived)
+        assertTrue(downloading.isImport)
 
         val error = LocalModelDownloadState.Error(
             modelId = "gemma-4-e4b-it",

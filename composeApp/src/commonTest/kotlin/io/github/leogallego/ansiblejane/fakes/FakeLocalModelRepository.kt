@@ -4,6 +4,7 @@ import io.github.leogallego.ansiblejane.assistant.local.DevicePerformance
 import io.github.leogallego.ansiblejane.assistant.local.ILocalModelRepository
 import io.github.leogallego.ansiblejane.assistant.local.LOCAL_MODEL_CATALOG
 import io.github.leogallego.ansiblejane.assistant.local.LocalModel
+import io.github.leogallego.ansiblejane.assistant.local.LocalModelDownloadErrorKind
 import io.github.leogallego.ansiblejane.assistant.local.LocalModelDownloadState
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -58,6 +59,19 @@ class FakeLocalModelRepository(
         importCalls = importCalls + (modelId to sourceAbsolutePath)
         ready.add(modelId)
         _downloadState.value = LocalModelDownloadState.Succeeded(modelId)
+    }
+
+    override fun notifyTransferError(modelId: String, kind: LocalModelDownloadErrorKind) {
+        _downloadState.value = LocalModelDownloadState.Error(modelId, kind)
+    }
+
+    override fun markImportPreparing(modelId: String) {
+        _downloadState.value = LocalModelDownloadState.Downloading(
+            modelId = modelId,
+            bytesReceived = 0L,
+            totalBytes = 1L,
+            isImport = true,
+        )
     }
 
     override fun devicePerformance(modelId: String, contextTokens: Int): DevicePerformance =

@@ -14,6 +14,8 @@ import kotlin.coroutines.cancellation.CancellationException
 import kotlinx.atomicfu.locks.synchronized
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.currentCoroutineContext
+import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -31,8 +33,8 @@ class LocalModelRepository(
         MutableStateFlow<LocalModelDownloadState>(LocalModelDownloadState.Idle)
     override val downloadState: StateFlow<LocalModelDownloadState> = _downloadState.asStateFlow()
 
-    private val downloadJobLock = Any()
-    private var downloadJob: Job? = null
+    private val transferJobLock = Any()
+    private var transferJob: Job? = null
 
     override fun catalog(): List<LocalModel> = catalog
 
@@ -56,8 +58,11 @@ class LocalModelRepository(
 
         val root = modelRoot()
         LocalModelFiles.ensureDirectory(root)
-
-        val requiredBytes = model.sizeBytes + DISK_BUFFER_BYTES
+        val targetPath = LocalModelFiles.join(root, model.id, model.fileName)
+        val tempPath = "$targetPath.partial"
+        val resumeFrom = clampedPartialLength(tempPath, model.sizeBytes)
+        val remainingBytes = (model.sizeBytes - resumeFrom).coerceAtLeast(0L)
+        val requiredBytes = remainingBytes + DISK_BUFFER_BYTES
         val freeBytes = deviceResources.freeDiskBytes(root)
         if (freeBytes < requiredBytes) {
             _downloadState.value = LocalModelDownloadState.Error(
@@ -67,26 +72,23 @@ class LocalModelRepository(
             return
         }
 
-        val job = synchronized(downloadJobLock) {
-            downloadJob?.cancel()
-            scope.launch {
-                runDownload(model, root)
-            }.also { downloadJob = it }
-        }
-        try {
-            job.join()
-        } finally {
-            synchronized(downloadJobLock) {
-                if (downloadJob === job) {
-                    downloadJob = null
-                }
-            }
+        runExclusiveTransfer {
+            runDownload(model, root)
         }
     }
 
     override fun cancelDownload() {
-        synchronized(downloadJobLock) {
-            downloadJob?.cancel()
+        val job = synchronized(transferJobLock) {
+            val current = transferJob
+            transferJob?.cancel()
+            current
+        }
+        // SAF prepare copy runs outside transferJob but still shows Importing UI.
+        if (job == null) {
+            val state = _downloadState.value
+            if (state is LocalModelDownloadState.Downloading && state.isImport) {
+                _downloadState.value = LocalModelDownloadState.Idle
+            }
         }
     }
 
@@ -125,6 +127,57 @@ class LocalModelRepository(
             return
         }
 
+        runExclusiveTransfer {
+            runImport(model, root, sourceAbsolutePath, sourceLength)
+        }
+    }
+
+    override fun notifyTransferError(modelId: String, kind: LocalModelDownloadErrorKind) {
+        _downloadState.value = LocalModelDownloadState.Error(modelId, kind)
+    }
+
+    override fun markImportPreparing(modelId: String) {
+        _downloadState.value = LocalModelDownloadState.Downloading(
+            modelId = modelId,
+            bytesReceived = 0L,
+            totalBytes = 1L,
+            isImport = true,
+        )
+    }
+
+    override fun devicePerformance(modelId: String, contextTokens: Int): DevicePerformance {
+        val model = catalog.find { it.id == modelId }
+            ?: return DevicePerformance.POOR
+        val estimated = estimateGpuMemoryMb(model, contextTokens)
+        return calculateDevicePerformance(deviceResources.totalMemoryBytes(), estimated)
+    }
+
+    override fun hasAvx2Support(): Boolean = deviceResources.hasAvx2Support()
+
+    private suspend fun runExclusiveTransfer(block: suspend () -> Unit) {
+        val job = synchronized(transferJobLock) {
+            transferJob?.cancel()
+            scope.launch {
+                block()
+            }.also { transferJob = it }
+        }
+        try {
+            job.join()
+        } finally {
+            synchronized(transferJobLock) {
+                if (transferJob === job) {
+                    transferJob = null
+                }
+            }
+        }
+    }
+
+    private suspend fun runImport(
+        model: LocalModel,
+        root: String,
+        sourceAbsolutePath: String,
+        sourceLength: Long,
+    ) {
         val targetPath = LocalModelFiles.join(root, model.id, model.fileName)
         val tempPath = "$targetPath.partial"
         LocalModelFiles.ensureDirectory(LocalModelFiles.join(root, model.id))
@@ -134,6 +187,7 @@ class LocalModelRepository(
             modelId = model.id,
             bytesReceived = 0L,
             totalBytes = sourceLength.coerceAtLeast(1L),
+            isImport = true,
         )
 
         try {
@@ -144,6 +198,7 @@ class LocalModelRepository(
             val sink = LocalModelFiles.openSink(tempPath, append = false)
             try {
                 while (true) {
+                    currentCoroutineContext().ensureActive()
                     val read = source.read(buffer, 0, buffer.size)
                     if (read < 0) break
                     if (read == 0) continue
@@ -154,6 +209,7 @@ class LocalModelRepository(
                         modelId = model.id,
                         bytesReceived = received,
                         totalBytes = sourceLength.coerceAtLeast(1L),
+                        isImport = true,
                     )
                 }
             } finally {
@@ -168,36 +224,26 @@ class LocalModelRepository(
             throw e
         } catch (e: Exception) {
             LocalModelFiles.deleteRecursively(tempPath)
-            val kind = classifyTransferError(e)
+            val classified = classifyTransferError(e)
+            val kind = when (classified) {
+                LocalModelDownloadErrorKind.DISK,
+                LocalModelDownloadErrorKind.HASH,
+                -> classified
+                else -> LocalModelDownloadErrorKind.IMPORT
+            }
             DebugLog.e(TAG, "Import failed for ${model.id} ($kind)", e)
             _downloadState.value = LocalModelDownloadState.Error(model.id, kind)
+        } finally {
+            maybeDeleteTransientImportSource(sourceAbsolutePath)
         }
     }
-
-    override fun devicePerformance(modelId: String, contextTokens: Int): DevicePerformance {
-        val model = catalog.find { it.id == modelId }
-            ?: return DevicePerformance.POOR
-        val estimated = estimateGpuMemoryMb(model, contextTokens)
-        return calculateDevicePerformance(deviceResources.totalMemoryBytes(), estimated)
-    }
-
-    override fun hasAvx2Support(): Boolean = deviceResources.hasAvx2Support()
 
     private suspend fun runDownload(model: LocalModel, root: String) {
         val targetPath = LocalModelFiles.join(root, model.id, model.fileName)
         val tempPath = "$targetPath.partial"
         LocalModelFiles.ensureDirectory(LocalModelFiles.join(root, model.id))
 
-        var resumeFrom = if (LocalModelFiles.exists(tempPath)) {
-            LocalModelFiles.length(tempPath)
-        } else {
-            0L
-        }
-        if (resumeFrom > model.sizeBytes) {
-            DebugLog.w(TAG, "Partial larger than catalog size for ${model.id}; restarting")
-            LocalModelFiles.deleteRecursively(tempPath)
-            resumeFrom = 0L
-        }
+        var resumeFrom = clampedPartialLength(tempPath, model.sizeBytes)
 
         var hasher = Sha256Hasher()
         if (resumeFrom > 0L) {
@@ -208,6 +254,7 @@ class LocalModelRepository(
             modelId = model.id,
             bytesReceived = resumeFrom,
             totalBytes = model.sizeBytes,
+            isImport = false,
         )
 
         if (resumeFrom == model.sizeBytes && resumeFrom > 0L) {
@@ -244,6 +291,7 @@ class LocalModelRepository(
                                 modelId = model.id,
                                 bytesReceived = 0L,
                                 totalBytes = model.sizeBytes,
+                                isImport = false,
                             )
                         }
                     }
@@ -259,6 +307,7 @@ class LocalModelRepository(
                 val sink = LocalModelFiles.openSink(tempPath, append = append)
                 try {
                     while (!channel.isClosedForRead) {
+                        currentCoroutineContext().ensureActive()
                         val read = channel.readAvailable(buffer, 0, buffer.size)
                         if (read == -1) break
                         if (read > 0) {
@@ -269,6 +318,7 @@ class LocalModelRepository(
                                 modelId = model.id,
                                 bytesReceived = received,
                                 totalBytes = model.sizeBytes,
+                                isImport = false,
                             )
                         }
                     }
@@ -327,8 +377,26 @@ class LocalModelRepository(
         }
     }
 
+    private fun clampedPartialLength(tempPath: String, sizeBytes: Long): Long {
+        if (!LocalModelFiles.exists(tempPath)) return 0L
+        val length = LocalModelFiles.length(tempPath)
+        if (length > sizeBytes) {
+            DebugLog.w(TAG, "Partial larger than catalog size; restarting")
+            LocalModelFiles.deleteRecursively(tempPath)
+            return 0L
+        }
+        return length
+    }
+
     private fun partialLength(tempPath: String): Long =
         if (LocalModelFiles.exists(tempPath)) LocalModelFiles.length(tempPath) else 0L
+
+    private fun maybeDeleteTransientImportSource(path: String) {
+        // Android SAF copies land under cacheDir/litert_import/ — drop after import attempt.
+        if (path.contains("/litert_import/") || path.contains("\\litert_import\\")) {
+            LocalModelFiles.deleteRecursively(path)
+        }
+    }
 
     private fun modelRoot(): String = modelRootOverride ?: deviceResources.modelStorageDirectory()
 

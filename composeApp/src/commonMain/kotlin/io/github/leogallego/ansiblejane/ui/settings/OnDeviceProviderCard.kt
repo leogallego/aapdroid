@@ -30,7 +30,11 @@ import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -46,6 +50,7 @@ import aapremotecontrol.composeapp.generated.resources.agent_local_delete
 import aapremotecontrol.composeapp.generated.resources.agent_local_download
 import aapremotecontrol.composeapp.generated.resources.agent_local_download_progress
 import aapremotecontrol.composeapp.generated.resources.agent_local_import
+import aapremotecontrol.composeapp.generated.resources.agent_local_importing
 import aapremotecontrol.composeapp.generated.resources.agent_local_not_downloaded
 import aapremotecontrol.composeapp.generated.resources.agent_local_performance_good
 import aapremotecontrol.composeapp.generated.resources.agent_local_performance_ok
@@ -65,6 +70,8 @@ import io.github.leogallego.ansiblejane.presentation.settings.LocalModelDownload
 import io.github.leogallego.ansiblejane.presentation.settings.LocalModelUi
 import io.github.leogallego.ansiblejane.presentation.settings.formatLocalModelSizeGb
 import io.github.leogallego.ansiblejane.ui.theme.AnsibleJaneTheme
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 import org.jetbrains.compose.resources.stringResource
 
 @Composable
@@ -84,6 +91,8 @@ internal fun LocalProviderCard(
     onDelete: (String) -> Unit,
     onSelect: (String) -> Unit,
     onImportFromPath: (modelId: String, absolutePath: String) -> Unit,
+    onImportPreparing: (modelId: String) -> Unit,
+    onImportPickFailed: (modelId: String) -> Unit,
 ) {
     val border = if (isActive) {
         BorderStroke(1.dp, MaterialTheme.colorScheme.primary)
@@ -183,6 +192,8 @@ internal fun LocalProviderCard(
                             onDelete = { onDelete(model.id) },
                             onSelect = { onSelect(model.id) },
                             onImportFromPath = { path -> onImportFromPath(model.id, path) },
+                            onImportPreparing = { onImportPreparing(model.id) },
+                            onImportPickFailed = { onImportPickFailed(model.id) },
                         )
                     }
                 }
@@ -204,15 +215,33 @@ internal fun LocalModelRow(
     onDelete: () -> Unit,
     onSelect: () -> Unit,
     onImportFromPath: (absolutePath: String) -> Unit,
+    onImportPreparing: () -> Unit,
+    onImportPickFailed: () -> Unit,
 ) {
     val downloading = downloadState as? LocalModelDownloadUiState.Downloading
     val isDownloadingThis = downloading?.modelId == model.id
     val error = downloadState as? LocalModelDownloadUiState.Error
     val errorForThis = error?.takeIf { it.modelId == model.id }
-    val existingPath = remember(model.fileName, isReady) {
-        if (isReady) null else findCatalogModelInDownloads(model.fileName)
+    var existingPath by remember(model.fileName) { mutableStateOf<String?>(null) }
+    LaunchedEffect(model.fileName, isReady) {
+        existingPath = if (isReady) {
+            null
+        } else {
+            withContext(Dispatchers.IO) {
+                findCatalogModelInDownloads(model.fileName)
+            }
+        }
     }
-    val launchImport = rememberLocalModelImportLauncher(onPickedAbsolutePath = onImportFromPath)
+    val importController = rememberLocalModelImportController(
+        onPreparing = onImportPreparing,
+        onResult = { pick ->
+            when (pick) {
+                is LocalModelImportPick.Success -> onImportFromPath(pick.absolutePath)
+                LocalModelImportPick.Failure -> onImportPickFailed()
+                LocalModelImportPick.Cancelled -> onCancelDownload()
+            }
+        },
+    )
     val sizeLabel = remember(model.sizeBytes) { formatLocalModelSizeGb(model.sizeBytes) }
 
     Column(
@@ -292,8 +321,13 @@ internal fun LocalModelRow(
                 0f
             }
             val percent = (progress * 100).toInt()
+            val progressLabel = if (downloading.isImport) {
+                stringResource(Res.string.agent_local_importing, "$percent%")
+            } else {
+                stringResource(Res.string.agent_local_download_progress, "$percent%")
+            }
             Text(
-                text = stringResource(Res.string.agent_local_download_progress, "$percent%"),
+                text = progressLabel,
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 modifier = Modifier.testTag("text_local_progress_${model.id}")
@@ -323,7 +357,10 @@ internal fun LocalModelRow(
             when {
                 isDownloadingThis -> {
                     OutlinedButton(
-                        onClick = onCancelDownload,
+                        onClick = {
+                            importController.cancelPrepare()
+                            onCancelDownload()
+                        },
                         enabled = actionsEnabled,
                         modifier = Modifier.testTag("button_local_cancel")
                     ) {
@@ -365,15 +402,16 @@ internal fun LocalModelRow(
                         Text(stringResource(Res.string.agent_local_download))
                     }
                     OutlinedButton(
-                        onClick = launchImport,
+                        onClick = importController::launch,
                         enabled = actionsEnabled && !busy,
                         modifier = Modifier.testTag("button_local_import_${model.id}")
                     ) {
                         Text(stringResource(Res.string.agent_local_import))
                     }
-                    if (existingPath != null) {
+                    val adoptPath = existingPath
+                    if (adoptPath != null) {
                         OutlinedButton(
-                            onClick = { onImportFromPath(existingPath) },
+                            onClick = { onImportFromPath(adoptPath) },
                             enabled = actionsEnabled && !busy,
                             modifier = Modifier.testTag("button_local_use_existing_${model.id}")
                         ) {

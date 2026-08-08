@@ -85,6 +85,8 @@ fun SettingsScreen(
                     onImportLocalModel = { modelId, path ->
                         viewModel.importLocalModel(modelId, path)
                     },
+                    onImportLocalModelPreparing = { viewModel.markLocalModelImportPreparing(it) },
+                    onImportLocalModelPickFailed = { viewModel.reportLocalModelImportPickFailed(it) },
                     onToggleMcp = { viewModel.toggleMcpEnabled(it) },
                     onAddMcpServer = { url, label, toolset, headers, useInstanceAuth ->
                         viewModel.addMcpServer(url, label, toolset, headers, useInstanceAuth)
@@ -135,6 +137,8 @@ private fun SettingsContent(
     onDeleteLocalModel: (String) -> Unit,
     onSelectLocalModel: (String) -> Unit,
     onImportLocalModel: (modelId: String, absolutePath: String) -> Unit,
+    onImportLocalModelPreparing: (modelId: String) -> Unit,
+    onImportLocalModelPickFailed: (modelId: String) -> Unit,
     onToggleMcp: (Boolean) -> Unit,
     onAddMcpServer: (String, String, String?, Map<String, String>, Boolean) -> Unit,
     onRemoveMcpServer: (String) -> Unit,
@@ -206,6 +210,8 @@ private fun SettingsContent(
                 onDeleteLocalModel = onDeleteLocalModel,
                 onSelectLocalModel = onSelectLocalModel,
                 onImportLocalModel = onImportLocalModel,
+                onImportLocalModelPreparing = onImportLocalModelPreparing,
+                onImportLocalModelPickFailed = onImportLocalModelPickFailed,
                 onClearHistory = onClearHistory,
                 modifier = Modifier.weight(1f)
             )

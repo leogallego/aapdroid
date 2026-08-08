@@ -368,7 +368,8 @@
     <string name="agent_local_size_gb">%1$s GB</string>
     <string name="agent_local_import">Import file</string>
     <string name="agent_local_use_existing">Use existing file</string>
-    <string name="agent_local_importing">Importing…</string>
+    <string name="agent_local_importing">Importing… %1$s</string>
+    <string name="agent_local_import_failed">Could not read the selected model file.</string>
 
     <!-- ToolsTab.kt -->
     <string name="tools_section_mcp_servers">MCP Servers</string>
