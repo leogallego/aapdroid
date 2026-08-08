@@ -28,6 +28,24 @@ class AssistantCapabilityTest {
     }
 
     @Test
+    fun `OnDevice E4B resolves contextChars to 4096`() {
+        val chars = resolveContextCharsForConfig(LlmProviderConfig.OnDevice(modelId = "gemma-4-e4b-it"))
+        assertEquals(4_096, chars)
+    }
+
+    @Test
+    fun `OnDevice 12B resolves contextChars to 8192`() {
+        val chars = resolveContextCharsForConfig(LlmProviderConfig.OnDevice(modelId = "gemma-4-12b-it"))
+        assertEquals(8_192, chars)
+    }
+
+    @Test
+    fun `OnDevice unknown modelId resolves contextChars to 4096 fallback`() {
+        val chars = resolveContextCharsForConfig(LlmProviderConfig.OnDevice(modelId = "unknown-model"))
+        assertEquals(4_096, chars)
+    }
+
+    @Test
     fun `small Ollama OpenAiCompatible config resolves to Simple`() {
         val capability = resolveCapabilityForConfig(
             LlmProviderConfig.OpenAiCompatible(

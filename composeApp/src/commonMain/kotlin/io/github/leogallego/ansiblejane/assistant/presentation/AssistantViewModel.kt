@@ -23,7 +23,6 @@ import io.github.leogallego.ansiblejane.assistant.llm.KoogLlmProvider
 import io.github.leogallego.ansiblejane.assistant.llm.LlmProvider
 import io.github.leogallego.ansiblejane.assistant.llm.LocalLlmProviderFactory
 import io.github.leogallego.ansiblejane.assistant.local.ILocalModelRepository
-import io.github.leogallego.ansiblejane.assistant.local.LOCAL_MODEL_CATALOG
 import io.github.leogallego.ansiblejane.assistant.tools.CachedMcpTool
 import io.github.leogallego.ansiblejane.assistant.tools.LocalTool
 import io.github.leogallego.ansiblejane.assistant.tools.Tool
@@ -286,8 +285,7 @@ class AssistantViewModel(
             val engine = ChatEngine(provider, toolExecutor)
             val maxTokens: Int? = null
             val contextChars = when (config) {
-                is LlmProviderConfig.OnDevice ->
-                    LOCAL_MODEL_CATALOG.find { it.id == config.modelId }?.defaultContextTokens ?: 4_096
+                is LlmProviderConfig.OnDevice -> resolveContextCharsForConfig(config)
                 is LlmProviderConfig.OpenAiCompatible -> when (mode) {
                     TokenSavingMode.STANDARD -> 16_000
                     TokenSavingMode.TOKEN_SAVER -> 8_000

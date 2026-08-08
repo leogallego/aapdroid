@@ -4,6 +4,7 @@ import io.github.leogallego.ansiblejane.assistant.data.KnownProvider
 import io.github.leogallego.ansiblejane.assistant.data.LlmProviderConfig
 import io.github.leogallego.ansiblejane.assistant.engine.ModelCapability
 import io.github.leogallego.ansiblejane.assistant.engine.ModelCapabilityResolver
+import io.github.leogallego.ansiblejane.assistant.local.LOCAL_MODEL_CATALOG
 
 /**
  * Resolves [ModelCapability] from the active LLM config (#264 / #453).
@@ -19,3 +20,7 @@ fun resolveCapabilityForConfig(config: LlmProviderConfig): ModelCapability = whe
             onDevice = false,
         )
 }
+
+/** On-device context budget from catalog [defaultContextTokens]; unknown modelId → 4096. */
+fun resolveContextCharsForConfig(config: LlmProviderConfig.OnDevice): Int =
+    LOCAL_MODEL_CATALOG.find { it.id == config.modelId }?.defaultContextTokens ?: 4_096

@@ -37,10 +37,10 @@ val LOCAL_MODEL_CATALOG: List<LocalModel> = listOf(
             "https://huggingface.co/litert-community/gemma-4-12B-it-litert-lm/" +
                 "resolve/b33be37e07c25ee94e6d99dd0a484b32158f7b49/gemma-4-12B-it.litertlm",
         sha256 = "74fc29a10c20eb5b3ced6c389471a7994a0ffd657255b2a1c764262fb9054aef",
+        // gpuMemoryMb (4_000) and kvPerTokenBytes (150_000) are estimates pending on-device validation.
         gpuMemoryMb = 4_000,
         defaultContextTokens = 8_192,
         maxContextTokens = 32_768,
-        // Estimated from Kai E4B (75_000); HF does not publish KV-per-token for 12B.
         kvPerTokenBytes = 150_000,
         onDeviceTier = OnDeviceTier.LARGE,
         isRecommended = true,
