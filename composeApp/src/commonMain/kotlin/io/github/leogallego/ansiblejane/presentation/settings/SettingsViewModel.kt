@@ -7,6 +7,7 @@ import io.github.leogallego.ansiblejane.assistant.data.KnownProvider
 import io.github.leogallego.ansiblejane.assistant.data.LlmProviderConfig
 import io.github.leogallego.ansiblejane.assistant.data.ModelFetcher
 import io.github.leogallego.ansiblejane.assistant.local.ILocalModelRepository
+import io.github.leogallego.ansiblejane.assistant.local.LocalModelDownloadErrorKind
 import io.github.leogallego.ansiblejane.assistant.presentation.ModelFetchState
 import io.github.leogallego.ansiblejane.data.ITokenManager
 import io.github.leogallego.ansiblejane.data.IToolManifestRepository
@@ -370,6 +371,21 @@ class SettingsViewModel(
 
     fun cancelLocalModelDownload() {
         localModelRepository.cancelDownload()
+    }
+
+    fun importLocalModel(modelId: String, absolutePath: String) {
+        viewModelScope.launch {
+            localModelRepository.importFromPath(modelId, absolutePath)
+            refreshLocalReadyIds()
+        }
+    }
+
+    fun markLocalModelImportPreparing(modelId: String) {
+        localModelRepository.markImportPreparing(modelId)
+    }
+
+    fun reportLocalModelImportPickFailed(modelId: String) {
+        localModelRepository.notifyTransferError(modelId, LocalModelDownloadErrorKind.IMPORT)
     }
 
     fun deleteLocalModel(modelId: String) {

@@ -85,14 +85,21 @@ class LocalModelRepositoryTest {
     }
 
     @Test
-    fun cancelDownload_abortsInFlightDownload() = runTest {
+    fun cancelDownload_keepsNonEmptyPartialForResume() = runTest {
         val model = testModel(sha256 = payloadSha256, sizeBytes = payload.size.toLong())
         val root = newRoot()
+        val tempPath = LocalModelFiles.join(root, model.id, model.fileName) + ".partial"
+        LocalModelFiles.ensureDirectory(LocalModelFiles.join(root, model.id))
+        val prefix = payload.copyOfRange(0, 2)
+        val sink = LocalModelFiles.openSink(tempPath, append = false)
+        sink.write(prefix, 0, prefix.size)
+        sink.close()
+
         val engine = MockEngine {
             delay(10_000)
             respond(
-                content = payload,
-                status = HttpStatusCode.OK,
+                content = payload.copyOfRange(2, payload.size),
+                status = HttpStatusCode.PartialContent,
                 headers = headersOf(HttpHeaders.ContentType, "application/octet-stream"),
             )
         }
@@ -124,13 +131,44 @@ class LocalModelRepositoryTest {
 
         assertIs<LocalModelDownloadState.Idle>(repo.downloadState.value)
         assertFalse(repo.isReady(model.id))
-        val expectedPath = LocalModelFiles.join(root, model.id, model.fileName)
-        assertFalse(LocalModelFiles.exists(expectedPath))
-        assertFalse(LocalModelFiles.exists("$expectedPath.partial"))
+        assertTrue(LocalModelFiles.exists(tempPath))
+        assertEquals(2L, LocalModelFiles.length(tempPath))
     }
 
     @Test
-    fun download_failsWhenDiskBelowSizePlus500Mb() = runTest {
+    fun download_diskCheckCreditsExistingPartial() = runTest {
+        val model = testModel(sha256 = payloadSha256, sizeBytes = 1_000L)
+        val root = newRoot()
+        val tempPath = LocalModelFiles.join(root, model.id, model.fileName) + ".partial"
+        LocalModelFiles.ensureDirectory(LocalModelFiles.join(root, model.id))
+        val sink = LocalModelFiles.openSink(tempPath, append = false)
+        val prefix = ByteArray(900) { 1 }
+        sink.write(prefix, 0, prefix.size)
+        sink.close()
+
+        val remaining = model.sizeBytes - 900L
+        val repo = createRepo(
+            catalog = listOf(model),
+            modelRoot = root,
+            // Enough for remainder + buffer, but not full size + buffer.
+            freeDiskBytes = remaining + diskBufferBytes,
+            responseBody = payload,
+        )
+
+        // Would have failed under the old full-size check; with credit it proceeds
+        // (may then fail HASH because suffix isn't real — only assert not DISK).
+        repo.download(model.id)
+
+        val state = repo.downloadState.value
+        assertFalse(
+            state is LocalModelDownloadState.Error &&
+                state.kind == LocalModelDownloadErrorKind.DISK,
+            "resume disk check should credit existing partial bytes",
+        )
+    }
+
+    @Test
+    fun download_failsWhenDiskBelowRemainingPlus500Mb() = runTest {
         val model = testModel(sha256 = payloadSha256, sizeBytes = 1_000L)
         val root = newRoot()
         val repo = createRepo(
@@ -146,6 +184,228 @@ class LocalModelRepositoryTest {
         assertIs<LocalModelDownloadState.Error>(state)
         assertEquals(LocalModelDownloadErrorKind.DISK, state.kind)
         assertFalse(repo.isReady(model.id))
+    }
+
+    @Test
+    fun download_resumesPartialWithHttp206() = runTest {
+        val full = "hello".encodeToByteArray()
+        val prefix = full.copyOfRange(0, 2)
+        val suffix = full.copyOfRange(2, full.size)
+        val model = testModel(sha256 = payloadSha256, sizeBytes = full.size.toLong())
+        val root = newRoot()
+        val tempPath = LocalModelFiles.join(root, model.id, model.fileName) + ".partial"
+        LocalModelFiles.ensureDirectory(LocalModelFiles.join(root, model.id))
+        val sink = LocalModelFiles.openSink(tempPath, append = false)
+        sink.write(prefix, 0, prefix.size)
+        sink.close()
+
+        var sawRange = false
+        val engine = MockEngine { request ->
+            val range = request.headers[HttpHeaders.Range]
+            sawRange = range == "bytes=2-"
+            respond(
+                content = suffix,
+                status = HttpStatusCode.PartialContent,
+                headers = headersOf(
+                    HttpHeaders.ContentType to listOf("application/octet-stream"),
+                    HttpHeaders.ContentRange to listOf("bytes 2-4/${full.size}"),
+                ),
+            )
+        }
+        val client = HttpClient(engine) { expectSuccess = false }
+        val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
+        scopes += scope
+        val repo = LocalModelRepository(
+            deviceResources = FakeDeviceResources(
+                freeDiskBytes = model.sizeBytes + diskBufferBytes + 1,
+                modelStorageDirectory = root,
+            ),
+            httpClient = client,
+            scope = scope,
+            catalog = listOf(model),
+            modelRootOverride = root,
+        )
+
+        repo.download(model.id)
+
+        assertTrue(sawRange)
+        assertTrue(repo.isReady(model.id))
+        assertIs<LocalModelDownloadState.Succeeded>(repo.downloadState.value)
+        assertFalse(LocalModelFiles.exists(tempPath))
+    }
+
+    @Test
+    fun download_restartsWhenServerIgnoresRange() = runTest {
+        val model = testModel(sha256 = payloadSha256, sizeBytes = payload.size.toLong())
+        val root = newRoot()
+        val tempPath = LocalModelFiles.join(root, model.id, model.fileName) + ".partial"
+        LocalModelFiles.ensureDirectory(LocalModelFiles.join(root, model.id))
+        val sink = LocalModelFiles.openSink(tempPath, append = false)
+        sink.write(byteArrayOf(0x00, 0x01), 0, 2)
+        sink.close()
+
+        val engine = MockEngine {
+            respond(
+                content = payload,
+                status = HttpStatusCode.OK,
+                headers = headersOf(HttpHeaders.ContentType, "application/octet-stream"),
+            )
+        }
+        val client = HttpClient(engine) { expectSuccess = false }
+        val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
+        scopes += scope
+        val repo = LocalModelRepository(
+            deviceResources = FakeDeviceResources(
+                freeDiskBytes = model.sizeBytes + diskBufferBytes + 1,
+                modelStorageDirectory = root,
+            ),
+            httpClient = client,
+            scope = scope,
+            catalog = listOf(model),
+            modelRootOverride = root,
+        )
+
+        repo.download(model.id)
+
+        assertTrue(repo.isReady(model.id))
+        assertIs<LocalModelDownloadState.Succeeded>(repo.downloadState.value)
+    }
+
+    @Test
+    fun importFromPath_verifiesSha_andMarksReady() = runTest {
+        val model = testModel(sha256 = payloadSha256, sizeBytes = payload.size.toLong())
+        val root = newRoot()
+        val source = LocalModelFiles.join(root, "import-source.litertlm")
+        val sink = LocalModelFiles.openSink(source, append = false)
+        sink.write(payload, 0, payload.size)
+        sink.close()
+
+        val repo = createRepo(
+            catalog = listOf(model),
+            modelRoot = root,
+            freeDiskBytes = model.sizeBytes + diskBufferBytes + 1,
+            responseBody = ByteArray(0),
+        )
+
+        repo.importFromPath(model.id, source)
+
+        assertTrue(repo.isReady(model.id))
+        assertIs<LocalModelDownloadState.Succeeded>(repo.downloadState.value)
+    }
+
+    @Test
+    fun importFromPath_rejectsHashMismatch() = runTest {
+        val model = testModel(
+            sha256 = "0000000000000000000000000000000000000000000000000000000000000000",
+            sizeBytes = payload.size.toLong(),
+        )
+        val root = newRoot()
+        val source = LocalModelFiles.join(root, "bad-import.litertlm")
+        val sink = LocalModelFiles.openSink(source, append = false)
+        sink.write(payload, 0, payload.size)
+        sink.close()
+
+        val repo = createRepo(
+            catalog = listOf(model),
+            modelRoot = root,
+            freeDiskBytes = model.sizeBytes + diskBufferBytes + 1,
+            responseBody = ByteArray(0),
+        )
+
+        repo.importFromPath(model.id, source)
+
+        val state = repo.downloadState.value
+        assertIs<LocalModelDownloadState.Error>(state)
+        assertEquals(LocalModelDownloadErrorKind.HASH, state.kind)
+        assertFalse(repo.isReady(model.id))
+    }
+
+    @Test
+    fun cancelImport_viaSharedTransferJob() = runTest {
+        val large = ByteArray(2 * 1024 * 1024) { it.toByte() }
+        val model = testModel(
+            sha256 = "0000000000000000000000000000000000000000000000000000000000000000",
+            sizeBytes = large.size.toLong(),
+        )
+        val root = newRoot()
+        val source = LocalModelFiles.join(root, "slow-import.litertlm")
+        val sink = LocalModelFiles.openSink(source, append = false)
+        sink.write(large, 0, large.size)
+        sink.close()
+
+        val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
+        scopes += scope
+        val repo = LocalModelRepository(
+            deviceResources = FakeDeviceResources(
+                freeDiskBytes = model.sizeBytes + diskBufferBytes + 1,
+                modelStorageDirectory = root,
+            ),
+            httpClient = HttpClient(MockEngine {
+                respond(ByteArray(0), HttpStatusCode.OK)
+            }) { expectSuccess = false },
+            scope = scope,
+            catalog = listOf(model),
+            modelRootOverride = root,
+        )
+
+        val importTask = scope.launch { repo.importFromPath(model.id, source) }
+        var attempts = 0
+        while (repo.downloadState.value !is LocalModelDownloadState.Downloading && attempts < 200) {
+            delay(10)
+            attempts++
+        }
+        val downloading = repo.downloadState.value
+        assertIs<LocalModelDownloadState.Downloading>(downloading)
+        assertTrue(downloading.isImport)
+
+        repo.cancelDownload()
+        importTask.join()
+
+        assertIs<LocalModelDownloadState.Idle>(repo.downloadState.value)
+        assertFalse(repo.isReady(model.id))
+    }
+
+    @Test
+    fun notifyTransferError_setsErrorState() = runTest {
+        val model = testModel(sha256 = payloadSha256, sizeBytes = 1)
+        val root = newRoot()
+        val repo = createRepo(
+            catalog = listOf(model),
+            modelRoot = root,
+            freeDiskBytes = Long.MAX_VALUE,
+            responseBody = ByteArray(0),
+        )
+
+        repo.notifyTransferError(model.id, LocalModelDownloadErrorKind.IMPORT)
+
+        val state = repo.downloadState.value
+        assertIs<LocalModelDownloadState.Error>(state)
+        assertEquals(LocalModelDownloadErrorKind.IMPORT, state.kind)
+    }
+
+    @Test
+    fun classifyTransferError_mapsTimeoutAndHttp() {
+        class SocketTimeoutException(message: String) : Exception(message)
+        class IOException(message: String) : Exception(message)
+
+        assertEquals(
+            LocalModelDownloadErrorKind.TIMEOUT,
+            LocalModelRepository.classifyTransferError(
+                RuntimeException(SocketTimeoutException("read timed out")),
+            ),
+        )
+        assertEquals(
+            LocalModelDownloadErrorKind.NETWORK,
+            LocalModelRepository.classifyTransferError(
+                IllegalStateException("Download failed with HTTP 503"),
+            ),
+        )
+        assertEquals(
+            LocalModelDownloadErrorKind.DISK,
+            LocalModelRepository.classifyTransferError(
+                IOException("No space left on device"),
+            ),
+        )
     }
 
     private fun newRoot(): String {

@@ -15,6 +15,8 @@ import io.github.leogallego.ansiblejane.network.mcp.McpServerManager
 import io.github.leogallego.ansiblejane.platform.IDeviceResources
 import io.github.leogallego.ansiblejane.platform.asIDeviceResources
 import io.github.leogallego.ansiblejane.platform.DeviceResources
+import io.ktor.client.plugins.HttpTimeout
+import io.ktor.client.plugins.HttpTimeoutConfig
 import io.ktor.client.plugins.defaultRequest
 import io.ktor.client.plugins.sse.SSE
 import io.ktor.client.request.header
@@ -33,7 +35,7 @@ val sharedAssistantModule = module {
     single {
         LocalModelRepository(
             deviceResources = get(),
-            httpClient = get(named("llm")),
+            httpClient = get(named("litertDownload")),
             scope = CoroutineScope(SupervisorJob() + Dispatchers.Default),
         )
     } bind ILocalModelRepository::class
@@ -66,6 +68,21 @@ val sharedAssistantModule = module {
     single(named("llm")) {
         createPlatformHttpClient {
             expectSuccess = false
+        }
+    }
+
+    /**
+     * Long-running HF model downloads. Must not reuse [llm] — OkHttp's default
+     * ~10s read timeout aborts multi-GB streams on brief mobile stalls (#469).
+     */
+    single(named("litertDownload")) {
+        createPlatformHttpClient {
+            expectSuccess = false
+            install(HttpTimeout) {
+                requestTimeoutMillis = HttpTimeoutConfig.INFINITE_TIMEOUT_MS
+                connectTimeoutMillis = 30_000
+                socketTimeoutMillis = 120_000
+            }
         }
     }
 
