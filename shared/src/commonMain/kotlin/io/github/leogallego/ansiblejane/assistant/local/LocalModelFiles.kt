@@ -5,6 +5,12 @@ internal interface ModelFileSink {
     fun close()
 }
 
+internal interface ModelFileSource {
+    /** Reads up to [length] bytes into [bytes] at [offset]. Returns count, or -1 at EOF. */
+    fun read(bytes: ByteArray, offset: Int, length: Int): Int
+    fun close()
+}
+
 /** Thin multiplatform file helpers for model download paths. */
 internal expect object LocalModelFiles {
     fun ensureDirectory(path: String)
@@ -12,6 +18,7 @@ internal expect object LocalModelFiles {
     fun length(path: String): Long
     fun deleteRecursively(path: String)
     fun rename(from: String, to: String)
-    fun openSink(path: String): ModelFileSink
+    fun openSink(path: String, append: Boolean = false): ModelFileSink
+    fun openSource(path: String): ModelFileSource
     fun join(parent: String, vararg parts: String): String
 }

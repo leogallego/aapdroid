@@ -3,6 +3,8 @@ package io.github.leogallego.ansiblejane.presentation.settings
 import aapremotecontrol.composeapp.generated.resources.Res
 import aapremotecontrol.composeapp.generated.resources.agent_local_disk_insufficient
 import aapremotecontrol.composeapp.generated.resources.agent_local_download_failed
+import aapremotecontrol.composeapp.generated.resources.agent_local_download_network
+import aapremotecontrol.composeapp.generated.resources.agent_local_download_timeout
 import aapremotecontrol.composeapp.generated.resources.agent_local_hash_mismatch
 import io.github.leogallego.ansiblejane.assistant.local.DevicePerformance
 import io.github.leogallego.ansiblejane.assistant.local.LocalModelDownloadErrorKind
@@ -24,7 +26,11 @@ class LocalModelUiMapperTest {
             LocalModelDownloadErrorKind.HASH.toUiMessage(),
         )
         assertEquals(
-            Res.string.agent_local_download_failed,
+            Res.string.agent_local_download_timeout,
+            LocalModelDownloadErrorKind.TIMEOUT.toUiMessage(),
+        )
+        assertEquals(
+            Res.string.agent_local_download_network,
             LocalModelDownloadErrorKind.NETWORK.toUiMessage(),
         )
         assertEquals(
@@ -56,5 +62,12 @@ class LocalModelUiMapperTest {
         assertEquals(DevicePerformanceUi.GOOD, DevicePerformance.GOOD.toUi())
         assertEquals(DevicePerformanceUi.OK, DevicePerformance.OK.toUi())
         assertEquals(DevicePerformanceUi.POOR, DevicePerformance.POOR.toUi())
+    }
+
+    @Test
+    fun `formatLocalModelSizeGb uses one decimal without printf placeholders`() {
+        assertEquals("3.4", formatLocalModelSizeGb(3_659_530_240L))
+        assertEquals("6.1", formatLocalModelSizeGb(6_547_589_312L))
+        assertEquals("0.0", formatLocalModelSizeGb(0L))
     }
 }

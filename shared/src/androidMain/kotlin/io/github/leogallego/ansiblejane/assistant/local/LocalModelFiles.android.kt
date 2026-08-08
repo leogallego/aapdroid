@@ -1,6 +1,7 @@
 package io.github.leogallego.ansiblejane.assistant.local
 
 import java.io.File
+import java.io.FileInputStream
 import java.io.FileOutputStream
 
 internal actual object LocalModelFiles {
@@ -32,10 +33,10 @@ internal actual object LocalModelFiles {
         }
     }
 
-    actual fun openSink(path: String): ModelFileSink {
+    actual fun openSink(path: String, append: Boolean): ModelFileSink {
         val file = File(path)
         file.parentFile?.mkdirs()
-        val out = FileOutputStream(file)
+        val out = FileOutputStream(file, append)
         return object : ModelFileSink {
             override fun write(bytes: ByteArray, offset: Int, length: Int) {
                 out.write(bytes, offset, length)
@@ -43,6 +44,18 @@ internal actual object LocalModelFiles {
 
             override fun close() {
                 out.close()
+            }
+        }
+    }
+
+    actual fun openSource(path: String): ModelFileSource {
+        val input = FileInputStream(File(path))
+        return object : ModelFileSource {
+            override fun read(bytes: ByteArray, offset: Int, length: Int): Int =
+                input.read(bytes, offset, length)
+
+            override fun close() {
+                input.close()
             }
         }
     }

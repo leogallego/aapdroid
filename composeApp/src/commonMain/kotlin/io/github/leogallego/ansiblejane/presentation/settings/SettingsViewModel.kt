@@ -372,6 +372,13 @@ class SettingsViewModel(
         localModelRepository.cancelDownload()
     }
 
+    fun importLocalModel(modelId: String, absolutePath: String) {
+        viewModelScope.launch {
+            localModelRepository.importFromPath(modelId, absolutePath)
+            refreshLocalReadyIds()
+        }
+    }
+
     fun deleteLocalModel(modelId: String) {
         viewModelScope.launch {
             localModelRepository.delete(modelId)

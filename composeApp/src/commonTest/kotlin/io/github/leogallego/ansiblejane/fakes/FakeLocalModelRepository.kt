@@ -25,6 +25,8 @@ class FakeLocalModelRepository(
         private set
     var deleteCalls: List<String> = emptyList()
         private set
+    var importCalls: List<Pair<String, String>> = emptyList()
+        private set
 
     override fun catalog(): List<LocalModel> = models
 
@@ -50,6 +52,12 @@ class FakeLocalModelRepository(
         if (_downloadState.value.let { it is LocalModelDownloadState.Succeeded && it.modelId == modelId }) {
             _downloadState.value = LocalModelDownloadState.Idle
         }
+    }
+
+    override suspend fun importFromPath(modelId: String, sourceAbsolutePath: String) {
+        importCalls = importCalls + (modelId to sourceAbsolutePath)
+        ready.add(modelId)
+        _downloadState.value = LocalModelDownloadState.Succeeded(modelId)
     }
 
     override fun devicePerformance(modelId: String, contextTokens: Int): DevicePerformance =

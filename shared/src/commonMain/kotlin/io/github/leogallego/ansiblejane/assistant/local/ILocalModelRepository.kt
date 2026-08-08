@@ -10,6 +10,11 @@ interface ILocalModelRepository {
     suspend fun download(modelId: String)
     fun cancelDownload()
     suspend fun delete(modelId: String)
+    /**
+     * Copy [sourceAbsolutePath] into Jane model storage, verify SHA-256 against the catalog,
+     * and mark the model ready on success.
+     */
+    suspend fun importFromPath(modelId: String, sourceAbsolutePath: String)
     fun devicePerformance(modelId: String, contextTokens: Int): DevicePerformance
     fun hasAvx2Support(): Boolean
 }
@@ -17,6 +22,7 @@ interface ILocalModelRepository {
 enum class LocalModelDownloadErrorKind {
     DISK,
     NETWORK,
+    TIMEOUT,
     HASH,
     OTHER,
 }

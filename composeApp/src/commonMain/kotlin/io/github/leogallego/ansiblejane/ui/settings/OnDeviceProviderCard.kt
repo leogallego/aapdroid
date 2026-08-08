@@ -30,6 +30,7 @@ import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -44,6 +45,7 @@ import aapremotecontrol.composeapp.generated.resources.agent_local_cancel
 import aapremotecontrol.composeapp.generated.resources.agent_local_delete
 import aapremotecontrol.composeapp.generated.resources.agent_local_download
 import aapremotecontrol.composeapp.generated.resources.agent_local_download_progress
+import aapremotecontrol.composeapp.generated.resources.agent_local_import
 import aapremotecontrol.composeapp.generated.resources.agent_local_not_downloaded
 import aapremotecontrol.composeapp.generated.resources.agent_local_performance_good
 import aapremotecontrol.composeapp.generated.resources.agent_local_performance_ok
@@ -52,6 +54,7 @@ import aapremotecontrol.composeapp.generated.resources.agent_local_ready
 import aapremotecontrol.composeapp.generated.resources.agent_local_recommended
 import aapremotecontrol.composeapp.generated.resources.agent_local_size_gb
 import aapremotecontrol.composeapp.generated.resources.agent_local_title
+import aapremotecontrol.composeapp.generated.resources.agent_local_use_existing
 import aapremotecontrol.composeapp.generated.resources.agent_not_configured
 import aapremotecontrol.composeapp.generated.resources.cd_collapse
 import aapremotecontrol.composeapp.generated.resources.cd_expand
@@ -60,6 +63,7 @@ import io.github.leogallego.ansiblejane.assistant.data.LlmProviderConfig
 import io.github.leogallego.ansiblejane.presentation.settings.DevicePerformanceUi
 import io.github.leogallego.ansiblejane.presentation.settings.LocalModelDownloadUiState
 import io.github.leogallego.ansiblejane.presentation.settings.LocalModelUi
+import io.github.leogallego.ansiblejane.presentation.settings.formatLocalModelSizeGb
 import io.github.leogallego.ansiblejane.ui.theme.AnsibleJaneTheme
 import org.jetbrains.compose.resources.stringResource
 
@@ -79,6 +83,7 @@ internal fun LocalProviderCard(
     onCancelDownload: () -> Unit,
     onDelete: (String) -> Unit,
     onSelect: (String) -> Unit,
+    onImportFromPath: (modelId: String, absolutePath: String) -> Unit,
 ) {
     val border = if (isActive) {
         BorderStroke(1.dp, MaterialTheme.colorScheme.primary)
@@ -177,6 +182,7 @@ internal fun LocalProviderCard(
                             onCancelDownload = onCancelDownload,
                             onDelete = { onDelete(model.id) },
                             onSelect = { onSelect(model.id) },
+                            onImportFromPath = { path -> onImportFromPath(model.id, path) },
                         )
                     }
                 }
@@ -197,11 +203,17 @@ internal fun LocalModelRow(
     onCancelDownload: () -> Unit,
     onDelete: () -> Unit,
     onSelect: () -> Unit,
+    onImportFromPath: (absolutePath: String) -> Unit,
 ) {
     val downloading = downloadState as? LocalModelDownloadUiState.Downloading
     val isDownloadingThis = downloading?.modelId == model.id
     val error = downloadState as? LocalModelDownloadUiState.Error
     val errorForThis = error?.takeIf { it.modelId == model.id }
+    val existingPath = remember(model.fileName, isReady) {
+        if (isReady) null else findCatalogModelInDownloads(model.fileName)
+    }
+    val launchImport = rememberLocalModelImportLauncher(onPickedAbsolutePath = onImportFromPath)
+    val sizeLabel = remember(model.sizeBytes) { formatLocalModelSizeGb(model.sizeBytes) }
 
     Column(
         modifier = Modifier
@@ -238,12 +250,10 @@ internal fun LocalModelRow(
                     }
                 }
                 Text(
-                    text = stringResource(
-                        Res.string.agent_local_size_gb,
-                        model.sizeBytes / (1024.0 * 1024.0 * 1024.0)
-                    ),
+                    text = stringResource(Res.string.agent_local_size_gb, sizeLabel),
                     style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.testTag("text_local_size_${model.id}")
                 )
                 Text(
                     text = when (performance) {
@@ -274,7 +284,7 @@ internal fun LocalModelRow(
             }
         }
 
-        if (isDownloadingThis && downloading != null) {
+        if (downloading != null && downloading.modelId == model.id) {
             val progress = if (downloading.totalBytes > 0) {
                 (downloading.bytesReceived.toFloat() / downloading.totalBytes.toFloat())
                     .coerceIn(0f, 1f)
@@ -283,9 +293,10 @@ internal fun LocalModelRow(
             }
             val percent = (progress * 100).toInt()
             Text(
-                text = stringResource(Res.string.agent_local_download_progress, percent),
+                text = stringResource(Res.string.agent_local_download_progress, "$percent%"),
                 style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.testTag("text_local_progress_${model.id}")
             )
             LinearProgressIndicator(
                 progress = { progress },
@@ -345,17 +356,32 @@ internal fun LocalModelRow(
                     }
                 }
                 else -> {
+                    val busy = downloadState is LocalModelDownloadUiState.Downloading
                     Button(
                         onClick = onDownload,
-                        enabled = actionsEnabled &&
-                            downloadState !is LocalModelDownloadUiState.Downloading,
+                        enabled = actionsEnabled && !busy,
                         modifier = Modifier.testTag("button_local_download_${model.id}")
                     ) {
                         Text(stringResource(Res.string.agent_local_download))
+                    }
+                    OutlinedButton(
+                        onClick = launchImport,
+                        enabled = actionsEnabled && !busy,
+                        modifier = Modifier.testTag("button_local_import_${model.id}")
+                    ) {
+                        Text(stringResource(Res.string.agent_local_import))
+                    }
+                    if (existingPath != null) {
+                        OutlinedButton(
+                            onClick = { onImportFromPath(existingPath) },
+                            enabled = actionsEnabled && !busy,
+                            modifier = Modifier.testTag("button_local_use_existing_${model.id}")
+                        ) {
+                            Text(stringResource(Res.string.agent_local_use_existing))
+                        }
                     }
                 }
             }
         }
     }
 }
-

@@ -61,6 +61,7 @@ fun AgentTab(
     onCancelLocalModelDownload: () -> Unit = {},
     onDeleteLocalModel: (String) -> Unit = {},
     onSelectLocalModel: (String) -> Unit = {},
+    onImportLocalModel: (modelId: String, absolutePath: String) -> Unit = { _, _ -> },
     onClearHistory: () -> Unit,
     modifier: Modifier = Modifier
 ) {
@@ -119,7 +120,8 @@ fun AgentTab(
                     onSelect = { modelId ->
                         expandedProvider = null
                         onSelectLocalModel(modelId)
-                    }
+                    },
+                    onImportFromPath = onImportLocalModel,
                 )
             } else {
                 val providerConfig = savedConfigs[provider.name] as? LlmProviderConfig.OpenAiCompatible

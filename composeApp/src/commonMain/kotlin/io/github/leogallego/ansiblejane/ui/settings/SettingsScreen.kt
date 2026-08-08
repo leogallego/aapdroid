@@ -82,6 +82,9 @@ fun SettingsScreen(
                     onCancelLocalModelDownload = { viewModel.cancelLocalModelDownload() },
                     onDeleteLocalModel = { viewModel.deleteLocalModel(it) },
                     onSelectLocalModel = { viewModel.selectLocalModel(it) },
+                    onImportLocalModel = { modelId, path ->
+                        viewModel.importLocalModel(modelId, path)
+                    },
                     onToggleMcp = { viewModel.toggleMcpEnabled(it) },
                     onAddMcpServer = { url, label, toolset, headers, useInstanceAuth ->
                         viewModel.addMcpServer(url, label, toolset, headers, useInstanceAuth)
@@ -131,6 +134,7 @@ private fun SettingsContent(
     onCancelLocalModelDownload: () -> Unit,
     onDeleteLocalModel: (String) -> Unit,
     onSelectLocalModel: (String) -> Unit,
+    onImportLocalModel: (modelId: String, absolutePath: String) -> Unit,
     onToggleMcp: (Boolean) -> Unit,
     onAddMcpServer: (String, String, String?, Map<String, String>, Boolean) -> Unit,
     onRemoveMcpServer: (String) -> Unit,
@@ -201,6 +205,7 @@ private fun SettingsContent(
                 onCancelLocalModelDownload = onCancelLocalModelDownload,
                 onDeleteLocalModel = onDeleteLocalModel,
                 onSelectLocalModel = onSelectLocalModel,
+                onImportLocalModel = onImportLocalModel,
                 onClearHistory = onClearHistory,
                 modifier = Modifier.weight(1f)
             )
