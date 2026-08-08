@@ -6,6 +6,7 @@ import io.github.leogallego.ansiblejane.assistant.data.LlmProviderConfig
 import io.github.leogallego.ansiblejane.assistant.data.ModelFetcher
 import io.github.leogallego.ansiblejane.assistant.engine.ToolRouter
 import io.github.leogallego.ansiblejane.presentation.settings.LocalModelDownloadUiState
+import io.github.leogallego.ansiblejane.presentation.settings.SettingsUiState
 import io.github.leogallego.ansiblejane.assistant.tools.LocalTool
 import io.github.leogallego.ansiblejane.assistant.tools.ToolResult
 import io.github.leogallego.ansiblejane.assistant.tools.ToolSpec
@@ -450,37 +451,45 @@ class SettingsViewModelTest {
     @Test
     fun `downloadLocalModel delegates to repository and marks ready`() = runTest {
         val viewModel = createViewModel()
+        advanceUntilIdle()
         val modelId = "gemma-4-e4b-it"
 
         viewModel.downloadLocalModel(modelId)
         advanceUntilIdle()
 
         assertEquals(listOf(modelId), fakeLocalModelRepo.downloadCalls)
-        assertTrue(modelId in viewModel.localReadyIds.value)
-        assertIs<LocalModelDownloadUiState.Succeeded>(viewModel.localDownloadState.value)
+        val ready = assertIs<SettingsUiState.Ready>(viewModel.uiState.value)
+        assertTrue(modelId in ready.localReadyIds)
+        assertIs<LocalModelDownloadUiState.Succeeded>(ready.localDownloadState)
     }
 
     @Test
     fun `cancelLocalModelDownload delegates to repository`() = runTest {
         val viewModel = createViewModel()
+        advanceUntilIdle()
 
         viewModel.cancelLocalModelDownload()
+        advanceUntilIdle()
 
         assertEquals(1, fakeLocalModelRepo.cancelCalls)
-        assertIs<LocalModelDownloadUiState.Idle>(viewModel.localDownloadState.value)
+        val ready = assertIs<SettingsUiState.Ready>(viewModel.uiState.value)
+        assertIs<LocalModelDownloadUiState.Idle>(ready.localDownloadState)
     }
 
     @Test
     fun `deleteLocalModel removes readiness`() = runTest {
         val readyRepo = FakeLocalModelRepository(readyIds = setOf("gemma-4-e4b-it"))
         val viewModel = createViewModel(localModelRepository = readyRepo)
-        assertTrue("gemma-4-e4b-it" in viewModel.localReadyIds.value)
+        advanceUntilIdle()
+        val before = assertIs<SettingsUiState.Ready>(viewModel.uiState.value)
+        assertTrue("gemma-4-e4b-it" in before.localReadyIds)
 
         viewModel.deleteLocalModel("gemma-4-e4b-it")
         advanceUntilIdle()
 
         assertEquals(listOf("gemma-4-e4b-it"), readyRepo.deleteCalls)
-        assertFalse("gemma-4-e4b-it" in viewModel.localReadyIds.value)
+        val after = assertIs<SettingsUiState.Ready>(viewModel.uiState.value)
+        assertFalse("gemma-4-e4b-it" in after.localReadyIds)
     }
 
     @Test
