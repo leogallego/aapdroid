@@ -61,7 +61,11 @@ class LlmProviderDefinitionsTest {
     @Test
     fun `SHOULD have non-empty defaultModels WHEN provider is known GIVEN all known providers`() {
         KnownProvider.entries
-            .filter { it != KnownProvider.CUSTOM && it != KnownProvider.ABBENAY }
+            .filter {
+                it != KnownProvider.CUSTOM &&
+                    it != KnownProvider.ABBENAY &&
+                    it != KnownProvider.LOCAL
+            }
             .forEach { provider ->
                 assert(provider.defaultModels.isNotEmpty()) {
                     "${provider.displayName} should have default models"

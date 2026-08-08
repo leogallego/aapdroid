@@ -10,6 +10,7 @@ import io.github.leogallego.ansiblejane.assistant.tools.LocalTool
 import io.github.leogallego.ansiblejane.assistant.tools.ToolResult
 import io.github.leogallego.ansiblejane.assistant.tools.ToolSpec
 import io.github.leogallego.ansiblejane.fakes.FakeAssistantRepository
+import io.github.leogallego.ansiblejane.fakes.FakeLocalModelRepository
 import io.github.leogallego.ansiblejane.fakes.FakeTokenManager
 import io.github.leogallego.ansiblejane.fakes.FakeToolManifestRepository
 import io.github.leogallego.ansiblejane.fakes.FakeMcpConnectionRepository
@@ -61,6 +62,7 @@ class AssistantViewModelTest {
         tokenManager = fakeTokenManager,
         manifestRepository = FakeToolManifestRepository(),
         toolRouter = ToolRouter(initialLocalTools = localTools, repository = fakeAssistantRepo),
+        localModelRepository = FakeLocalModelRepository(),
         localTools = localTools,
     )
 

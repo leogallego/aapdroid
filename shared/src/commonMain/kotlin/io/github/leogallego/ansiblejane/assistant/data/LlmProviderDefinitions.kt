@@ -79,6 +79,13 @@ enum class KnownProvider(
         requiresApiKey = false,
         urlEditable = true
     ),
+    LOCAL(
+        displayName = "On-device",
+        baseUrl = "",
+        defaultModels = emptyList(),
+        requiresApiKey = false,
+        urlEditable = false,
+    ),
     CUSTOM(
         displayName = "Custom",
         baseUrl = "",

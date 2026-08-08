@@ -14,6 +14,7 @@ import io.github.leogallego.ansiblejane.assistant.engine.ToolRouter
 import io.github.leogallego.ansiblejane.desktopTestKoinModule
 import io.github.leogallego.ansiblejane.fakes.FakeAssistantRepository
 import io.github.leogallego.ansiblejane.fakes.FakeAuthRepository
+import io.github.leogallego.ansiblejane.fakes.FakeLocalModelRepository
 import io.github.leogallego.ansiblejane.fakes.FakeMcpConnectionRepository
 import io.github.leogallego.ansiblejane.fakes.FakeTokenManager
 import io.github.leogallego.ansiblejane.fakes.FakeToolManifestRepository
@@ -79,6 +80,7 @@ class SettingsScreenTest {
         mcpConnectionRepository = mcpConnectionRepository,
         manifestRepository = FakeToolManifestRepository(),
         toolRouter = ToolRouter(initialLocalTools = emptyList(), repository = fakeAssistantRepo),
+        localModelRepository = FakeLocalModelRepository(),
         json = json,
         modelFetcher = ModelFetcher(json) { _ ->
             HttpClient(MockEngine) {

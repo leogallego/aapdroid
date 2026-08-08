@@ -64,6 +64,7 @@ class FakeAssistantRepository : IAssistantRepository {
     override suspend fun saveLlmConfig(config: LlmProviderConfig) {
         val providerKey = when (config) {
             is LlmProviderConfig.OpenAiCompatible -> KnownProvider.fromUrl(config.url).name
+            is LlmProviderConfig.OnDevice -> KnownProvider.LOCAL.name
         }
         allConfigs[providerKey] = config
         activeProvider = providerKey
