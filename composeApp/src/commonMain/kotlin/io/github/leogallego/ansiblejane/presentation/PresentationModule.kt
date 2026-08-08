@@ -71,6 +71,7 @@ val presentationModule = module {
             manifestRepository = get(),
             instanceDiscovery = get(),
             toolRouter = get(),
+            localModelRepository = get(),
             json = networkJson
         )
     }

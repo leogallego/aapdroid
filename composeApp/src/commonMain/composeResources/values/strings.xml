@@ -345,6 +345,23 @@
     <string name="agent_models_more">%1$d more — type to filter</string>
     <string name="agent_label_token_usage">Token Usage</string>
     <string name="agent_ollama_hint">Use 10.0.2.2 instead of localhost for emulator</string>
+    <string name="agent_local_title">On-device</string>
+    <string name="agent_local_download">Download</string>
+    <string name="agent_local_cancel">Cancel download</string>
+    <string name="agent_local_delete">Delete</string>
+    <string name="agent_local_activate">Activate</string>
+    <string name="agent_local_active">Active</string>
+    <string name="agent_local_ready">Ready</string>
+    <string name="agent_local_not_downloaded">Not downloaded</string>
+    <string name="agent_local_recommended">Recommended</string>
+    <string name="agent_local_performance_good">Good for this device</string>
+    <string name="agent_local_performance_ok">OK for this device</string>
+    <string name="agent_local_performance_poor">May be slow on this device</string>
+    <string name="agent_local_avx_unsupported">On-device models require a CPU with AVX2 support. This desktop does not meet that requirement.</string>
+    <string name="agent_local_disk_insufficient">Not enough free disk space to download this model.</string>
+    <string name="agent_local_loading_model">Loading model…</string>
+    <string name="agent_local_download_progress">Downloading… %1$d%%</string>
+    <string name="agent_local_size_gb">%1$.1f GB</string>
 
     <!-- ToolsTab.kt -->
     <string name="tools_section_mcp_servers">MCP Servers</string>

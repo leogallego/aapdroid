@@ -13,6 +13,7 @@ import io.github.leogallego.ansiblejane.assistant.engine.ToolRouter
 import io.github.leogallego.ansiblejane.desktopTestKoinModule
 import io.github.leogallego.ansiblejane.fakes.FakeAapApiProvider
 import io.github.leogallego.ansiblejane.fakes.FakeAssistantRepository
+import io.github.leogallego.ansiblejane.fakes.FakeLocalModelRepository
 import io.github.leogallego.ansiblejane.fakes.FakeTokenManager
 import io.github.leogallego.ansiblejane.fakes.FakeToolManifestRepository
 import io.github.leogallego.ansiblejane.fakes.FakeUserPreferencesRepository
@@ -81,6 +82,7 @@ class SettingsScreenTest {
         manifestRepository = FakeToolManifestRepository(),
         instanceDiscovery = InstanceDiscovery(json),
         toolRouter = ToolRouter(repository = fakeAssistantRepo),
+        localModelRepository = FakeLocalModelRepository(),
         json = json
     )
 

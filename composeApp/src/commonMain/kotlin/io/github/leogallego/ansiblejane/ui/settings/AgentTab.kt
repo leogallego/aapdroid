@@ -39,6 +39,7 @@ import androidx.compose.material3.ExposedDropdownMenuDefaults
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
+import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Switch
@@ -69,6 +70,9 @@ import aapremotecontrol.composeapp.generated.resources.*
 import io.github.leogallego.ansiblejane.assistant.data.KnownProvider
 import io.github.leogallego.ansiblejane.assistant.data.LlmProviderConfig
 import io.github.leogallego.ansiblejane.assistant.data.TokenSavingMode
+import io.github.leogallego.ansiblejane.assistant.local.DevicePerformance
+import io.github.leogallego.ansiblejane.assistant.local.LocalModel
+import io.github.leogallego.ansiblejane.assistant.local.LocalModelDownloadState
 import io.github.leogallego.ansiblejane.assistant.presentation.ModelFetchState
 
 @Composable
@@ -82,6 +86,15 @@ fun AgentTab(
     onClearFetchedModels: () -> Unit,
     onSaveProviderConfig: (providerKey: String, LlmProviderConfig) -> Unit,
     onSwitchActiveProvider: (String) -> Unit,
+    localModelCatalog: List<LocalModel> = emptyList(),
+    localDownloadState: LocalModelDownloadState = LocalModelDownloadState.Idle,
+    localReadyIds: Set<String> = emptySet(),
+    hasAvx2Support: Boolean = true,
+    onLocalModelPerformance: (String) -> DevicePerformance = { DevicePerformance.POOR },
+    onDownloadLocalModel: (String) -> Unit = {},
+    onCancelLocalModelDownload: () -> Unit = {},
+    onDeleteLocalModel: (String) -> Unit = {},
+    onSelectLocalModel: (String) -> Unit = {},
     onClearHistory: () -> Unit,
     modifier: Modifier = Modifier
 ) {
@@ -103,43 +116,75 @@ fun AgentTab(
         val sortedProviders = remember(activeProviderKey, savedConfigs) {
             KnownProvider.entries.sortedWith(compareByDescending<KnownProvider> {
                 it.name == activeProviderKey
-            }.thenByDescending {
-                val cfg = savedConfigs[it.name] as? LlmProviderConfig.OpenAiCompatible
-                cfg != null && cfg.model.isNotBlank()
+            }.thenByDescending { provider ->
+                when (val cfg = savedConfigs[provider.name]) {
+                    is LlmProviderConfig.OpenAiCompatible -> cfg.model.isNotBlank()
+                    is LlmProviderConfig.OnDevice -> cfg.modelId.isNotBlank()
+                    null -> false
+                }
             })
         }
 
         sortedProviders.forEach { provider ->
-            val providerConfig = savedConfigs[provider.name] as? LlmProviderConfig.OpenAiCompatible
             val isActive = activeProviderKey == provider.name
-            val isConfigured = providerConfig != null && providerConfig.model.isNotBlank()
             val isExpanded = expandedProvider == provider
 
-            ProviderCard(
-                provider = provider,
-                config = providerConfig,
-                isActive = isActive,
-                isConfigured = isConfigured,
-                isExpanded = isExpanded,
-                fetchedModels = if (isExpanded) fetchedModels else emptyList(),
-                modelFetchState = if (isExpanded) modelFetchState else ModelFetchState.Idle,
-                onToggleExpand = {
-                    if (isExpanded) {
+            if (provider == KnownProvider.LOCAL) {
+                val onDeviceConfig = savedConfigs[provider.name] as? LlmProviderConfig.OnDevice
+                val isConfigured = onDeviceConfig != null &&
+                    onDeviceConfig.modelId.isNotBlank() &&
+                    onDeviceConfig.modelId in localReadyIds
+                LocalProviderCard(
+                    config = onDeviceConfig,
+                    isActive = isActive,
+                    isConfigured = isConfigured,
+                    isExpanded = isExpanded,
+                    catalog = localModelCatalog,
+                    downloadState = localDownloadState,
+                    readyIds = localReadyIds,
+                    hasAvx2Support = hasAvx2Support,
+                    onPerformance = onLocalModelPerformance,
+                    onToggleExpand = {
+                        expandedProvider = if (isExpanded) null else provider
+                    },
+                    onDownload = onDownloadLocalModel,
+                    onCancelDownload = onCancelLocalModelDownload,
+                    onDelete = onDeleteLocalModel,
+                    onSelect = { modelId ->
                         expandedProvider = null
-                    } else {
-                        expandedProvider = provider
-                        onClearFetchedModels()
+                        onSelectLocalModel(modelId)
                     }
-                },
-                onFetchModels = onFetchModels,
-                onSave = { config ->
-                    onSaveProviderConfig(provider.name, config)
-                },
-                onSetActive = {
-                    expandedProvider = null
-                    onSwitchActiveProvider(provider.name)
-                }
-            )
+                )
+            } else {
+                val providerConfig = savedConfigs[provider.name] as? LlmProviderConfig.OpenAiCompatible
+                val isConfigured = providerConfig != null && providerConfig.model.isNotBlank()
+
+                ProviderCard(
+                    provider = provider,
+                    config = providerConfig,
+                    isActive = isActive,
+                    isConfigured = isConfigured,
+                    isExpanded = isExpanded,
+                    fetchedModels = if (isExpanded) fetchedModels else emptyList(),
+                    modelFetchState = if (isExpanded) modelFetchState else ModelFetchState.Idle,
+                    onToggleExpand = {
+                        if (isExpanded) {
+                            expandedProvider = null
+                        } else {
+                            expandedProvider = provider
+                            onClearFetchedModels()
+                        }
+                    },
+                    onFetchModels = onFetchModels,
+                    onSave = { config ->
+                        onSaveProviderConfig(provider.name, config)
+                    },
+                    onSetActive = {
+                        expandedProvider = null
+                        onSwitchActiveProvider(provider.name)
+                    }
+                )
+            }
         }
 
         HorizontalDivider(modifier = Modifier.padding(vertical = 4.dp))
@@ -202,6 +247,307 @@ fun AgentTab(
                 TextButton(onClick = { showClearHistoryConfirm = false }) { Text(stringResource(Res.string.btn_cancel)) }
             }
         )
+    }
+}
+
+@Composable
+private fun LocalProviderCard(
+    config: LlmProviderConfig.OnDevice?,
+    isActive: Boolean,
+    isConfigured: Boolean,
+    isExpanded: Boolean,
+    catalog: List<LocalModel>,
+    downloadState: LocalModelDownloadState,
+    readyIds: Set<String>,
+    hasAvx2Support: Boolean,
+    onPerformance: (String) -> DevicePerformance,
+    onToggleExpand: () -> Unit,
+    onDownload: (String) -> Unit,
+    onCancelDownload: () -> Unit,
+    onDelete: (String) -> Unit,
+    onSelect: (String) -> Unit,
+) {
+    val border = if (isActive) {
+        BorderStroke(1.dp, MaterialTheme.colorScheme.primary)
+    } else null
+
+    val dotColor = when {
+        isActive -> AnsibleJaneTheme.statusColors.successful
+        isConfigured -> MaterialTheme.colorScheme.tertiary
+        else -> MaterialTheme.colorScheme.outlineVariant
+    }
+
+    val subtitle = when {
+        !hasAvx2Support -> stringResource(Res.string.agent_local_avx_unsupported)
+        config != null && config.modelId in readyIds ->
+            catalog.find { it.id == config.modelId }?.displayName ?: config.modelId
+        else -> stringResource(Res.string.agent_not_configured)
+    }
+
+    Card(
+        modifier = Modifier
+            .fillMaxWidth()
+            .testTag("card_provider_${KnownProvider.LOCAL.name}"),
+        border = border
+    ) {
+        Column {
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clickable { onToggleExpand() }
+                    .padding(16.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Box(
+                    modifier = Modifier
+                        .size(10.dp)
+                        .clip(CircleShape)
+                        .background(dotColor)
+                )
+                Spacer(modifier = Modifier.width(12.dp))
+                Column(modifier = Modifier.weight(1f)) {
+                    Text(
+                        text = stringResource(Res.string.agent_local_title),
+                        style = MaterialTheme.typography.titleSmall
+                    )
+                    Text(
+                        text = subtitle,
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        maxLines = 2,
+                        overflow = TextOverflow.Ellipsis
+                    )
+                }
+                Icon(
+                    imageVector = if (isExpanded) Icons.Default.KeyboardArrowUp
+                    else Icons.Default.KeyboardArrowDown,
+                    contentDescription = if (isExpanded) {
+                        stringResource(Res.string.cd_collapse)
+                    } else {
+                        stringResource(Res.string.cd_expand)
+                    },
+                    tint = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
+
+            AnimatedVisibility(
+                visible = isExpanded,
+                enter = expandVertically(),
+                exit = shrinkVertically()
+            ) {
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(start = 16.dp, end = 16.dp, bottom = 16.dp),
+                    verticalArrangement = Arrangement.spacedBy(12.dp)
+                ) {
+                    HorizontalDivider()
+
+                    if (!hasAvx2Support) {
+                        Text(
+                            text = stringResource(Res.string.agent_local_avx_unsupported),
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.error,
+                            modifier = Modifier.testTag("text_local_avx_unsupported")
+                        )
+                    }
+
+                    catalog.forEach { model ->
+                        LocalModelRow(
+                            model = model,
+                            isReady = model.id in readyIds,
+                            isSelected = isActive && config?.modelId == model.id,
+                            downloadState = downloadState,
+                            performance = onPerformance(model.id),
+                            actionsEnabled = hasAvx2Support,
+                            onDownload = { onDownload(model.id) },
+                            onCancelDownload = onCancelDownload,
+                            onDelete = { onDelete(model.id) },
+                            onSelect = { onSelect(model.id) },
+                        )
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun LocalModelRow(
+    model: LocalModel,
+    isReady: Boolean,
+    isSelected: Boolean,
+    downloadState: LocalModelDownloadState,
+    performance: DevicePerformance,
+    actionsEnabled: Boolean,
+    onDownload: () -> Unit,
+    onCancelDownload: () -> Unit,
+    onDelete: () -> Unit,
+    onSelect: () -> Unit,
+) {
+    val downloading = downloadState as? LocalModelDownloadState.Downloading
+    val isDownloadingThis = downloading?.modelId == model.id
+    val error = downloadState as? LocalModelDownloadState.Error
+    val errorForThis = error?.takeIf { it.modelId == model.id }
+
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .testTag("row_local_model_${model.id}"),
+        verticalArrangement = Arrangement.spacedBy(6.dp)
+    ) {
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Column(modifier = Modifier.weight(1f)) {
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(6.dp)
+                ) {
+                    Text(
+                        text = model.displayName,
+                        style = MaterialTheme.typography.titleSmall
+                    )
+                    if (model.isRecommended) {
+                        Surface(
+                            shape = RoundedCornerShape(4.dp),
+                            color = MaterialTheme.colorScheme.tertiaryContainer
+                        ) {
+                            Text(
+                                text = stringResource(Res.string.agent_local_recommended),
+                                style = MaterialTheme.typography.labelSmall,
+                                color = MaterialTheme.colorScheme.onTertiaryContainer,
+                                modifier = Modifier.padding(horizontal = 5.dp, vertical = 1.dp)
+                            )
+                        }
+                    }
+                }
+                Text(
+                    text = stringResource(
+                        Res.string.agent_local_size_gb,
+                        model.sizeBytes / (1024.0 * 1024.0 * 1024.0)
+                    ),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+                Text(
+                    text = when (performance) {
+                        DevicePerformance.GOOD ->
+                            stringResource(Res.string.agent_local_performance_good)
+                        DevicePerformance.OK ->
+                            stringResource(Res.string.agent_local_performance_ok)
+                        DevicePerformance.POOR ->
+                            stringResource(Res.string.agent_local_performance_poor)
+                    },
+                    style = MaterialTheme.typography.bodySmall,
+                    color = when (performance) {
+                        DevicePerformance.GOOD -> AnsibleJaneTheme.statusColors.successful
+                        DevicePerformance.OK -> MaterialTheme.colorScheme.tertiary
+                        DevicePerformance.POOR -> MaterialTheme.colorScheme.error
+                    },
+                    modifier = Modifier.testTag("text_local_performance_${model.id}")
+                )
+                Text(
+                    text = if (isReady) {
+                        stringResource(Res.string.agent_local_ready)
+                    } else {
+                        stringResource(Res.string.agent_local_not_downloaded)
+                    },
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
+        }
+
+        if (isDownloadingThis && downloading != null) {
+            val progress = if (downloading.totalBytes > 0) {
+                (downloading.bytesReceived.toFloat() / downloading.totalBytes.toFloat())
+                    .coerceIn(0f, 1f)
+            } else {
+                0f
+            }
+            val percent = (progress * 100).toInt()
+            Text(
+                text = stringResource(Res.string.agent_local_download_progress, percent),
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+            LinearProgressIndicator(
+                progress = { progress },
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .testTag("progress_local_download_${model.id}")
+            )
+        }
+
+        if (errorForThis != null) {
+            val message = if (errorForThis.message.contains("Insufficient disk", ignoreCase = true)) {
+                stringResource(Res.string.agent_local_disk_insufficient)
+            } else {
+                errorForThis.message
+            }
+            Text(
+                text = message,
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.error,
+                modifier = Modifier.testTag("text_local_error_${model.id}")
+            )
+        }
+
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            when {
+                isDownloadingThis -> {
+                    OutlinedButton(
+                        onClick = onCancelDownload,
+                        enabled = actionsEnabled,
+                        modifier = Modifier.testTag("button_local_cancel")
+                    ) {
+                        Text(stringResource(Res.string.agent_local_cancel))
+                    }
+                }
+                isReady -> {
+                    OutlinedButton(
+                        onClick = onDelete,
+                        enabled = actionsEnabled,
+                        modifier = Modifier.testTag("button_local_delete_${model.id}")
+                    ) {
+                        Text(stringResource(Res.string.agent_local_delete))
+                    }
+                    if (isSelected) {
+                        Text(
+                            text = stringResource(Res.string.agent_local_active),
+                            style = MaterialTheme.typography.labelLarge,
+                            color = MaterialTheme.colorScheme.primary,
+                            modifier = Modifier.testTag("text_local_active_${model.id}")
+                        )
+                    } else {
+                        Button(
+                            onClick = onSelect,
+                            enabled = actionsEnabled,
+                            modifier = Modifier.testTag("button_local_activate_${model.id}")
+                        ) {
+                            Text(stringResource(Res.string.agent_local_activate))
+                        }
+                    }
+                }
+                else -> {
+                    Button(
+                        onClick = onDownload,
+                        enabled = actionsEnabled &&
+                            downloadState !is LocalModelDownloadState.Downloading,
+                        modifier = Modifier.testTag("button_local_download_${model.id}")
+                    ) {
+                        Text(stringResource(Res.string.agent_local_download))
+                    }
+                }
+            }
+        }
     }
 }
 

@@ -21,6 +21,9 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import io.github.leogallego.ansiblejane.assistant.local.DevicePerformance
+import io.github.leogallego.ansiblejane.assistant.local.LocalModel
+import io.github.leogallego.ansiblejane.assistant.local.LocalModelDownloadState
 import io.github.leogallego.ansiblejane.assistant.tools.ToolSource
 import io.github.leogallego.ansiblejane.presentation.settings.SettingsTab
 import io.github.leogallego.ansiblejane.presentation.settings.SettingsUiState
@@ -39,6 +42,8 @@ fun SettingsScreen(
     viewModel: SettingsViewModel = koinViewModel()
 ) {
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
+    val localDownloadState by viewModel.localDownloadState.collectAsStateWithLifecycle()
+    val localReadyIds by viewModel.localReadyIds.collectAsStateWithLifecycle()
 
     LaunchedEffect(initialTab) {
         initialTab?.let { tabName ->
@@ -76,6 +81,15 @@ fun SettingsScreen(
                     onSwitchActiveProvider = { viewModel.switchActiveProvider(it) },
                     onFetchModels = { url, key -> viewModel.fetchAvailableModels(url, key) },
                     onClearFetchedModels = { viewModel.clearFetchedModels() },
+                    localModelCatalog = viewModel.localModelCatalog,
+                    localDownloadState = localDownloadState,
+                    localReadyIds = localReadyIds,
+                    hasAvx2Support = viewModel.hasAvx2Support,
+                    onLocalModelPerformance = { viewModel.localModelPerformance(it) },
+                    onDownloadLocalModel = { viewModel.downloadLocalModel(it) },
+                    onCancelLocalModelDownload = { viewModel.cancelLocalModelDownload() },
+                    onDeleteLocalModel = { viewModel.deleteLocalModel(it) },
+                    onSelectLocalModel = { viewModel.selectLocalModel(it) },
                     onToggleMcp = { viewModel.toggleMcpEnabled(it) },
                     onAddMcpServer = { url, label, toolset, headers, useInstanceAuth ->
                         viewModel.addMcpServer(url, label, toolset, headers, useInstanceAuth)
@@ -120,6 +134,15 @@ private fun SettingsContent(
     onSwitchActiveProvider: (String) -> Unit,
     onFetchModels: (String, String?) -> Unit,
     onClearFetchedModels: () -> Unit,
+    localModelCatalog: List<LocalModel>,
+    localDownloadState: LocalModelDownloadState,
+    localReadyIds: Set<String>,
+    hasAvx2Support: Boolean,
+    onLocalModelPerformance: (String) -> DevicePerformance,
+    onDownloadLocalModel: (String) -> Unit,
+    onCancelLocalModelDownload: () -> Unit,
+    onDeleteLocalModel: (String) -> Unit,
+    onSelectLocalModel: (String) -> Unit,
     onToggleMcp: (Boolean) -> Unit,
     onAddMcpServer: (String, String, String?, Map<String, String>, Boolean) -> Unit,
     onRemoveMcpServer: (String) -> Unit,
@@ -181,6 +204,15 @@ private fun SettingsContent(
                 onClearFetchedModels = onClearFetchedModels,
                 onSaveProviderConfig = onSaveProviderConfig,
                 onSwitchActiveProvider = onSwitchActiveProvider,
+                localModelCatalog = localModelCatalog,
+                localDownloadState = localDownloadState,
+                localReadyIds = localReadyIds,
+                hasAvx2Support = hasAvx2Support,
+                onLocalModelPerformance = onLocalModelPerformance,
+                onDownloadLocalModel = onDownloadLocalModel,
+                onCancelLocalModelDownload = onCancelLocalModelDownload,
+                onDeleteLocalModel = onDeleteLocalModel,
+                onSelectLocalModel = onSelectLocalModel,
                 onClearHistory = onClearHistory,
                 modifier = Modifier.weight(1f)
             )
