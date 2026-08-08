@@ -9,8 +9,10 @@ import androidx.work.WorkManager
 import io.github.leogallego.ansiblejane.data.IUserPreferencesRepository
 import io.github.leogallego.ansiblejane.model.PollInterval
 import io.github.leogallego.ansiblejane.data.dataModule
+import io.github.leogallego.ansiblejane.assistant.local.ILocalModelRepository
 import io.github.leogallego.ansiblejane.notification.ApprovalNotificationManager
 import io.github.leogallego.ansiblejane.notification.ApprovalPollingWorker
+import io.github.leogallego.ansiblejane.notification.ModelDownloadForegroundObserver
 import io.github.leogallego.ansiblejane.platform.DataStoreFactory
 import io.github.leogallego.ansiblejane.platform.SecureKeyStorage
 import io.github.leogallego.ansiblejane.platform.TinkMigration
@@ -59,6 +61,13 @@ class AnsibleJaneApp : Application() {
         }
 
         ApprovalNotificationManager.createChannel(this)
+
+        val localModelRepository: ILocalModelRepository by inject()
+        ModelDownloadForegroundObserver(
+            appContext = this,
+            repository = localModelRepository,
+            scope = appScope,
+        ).start()
 
         val userPreferences: IUserPreferencesRepository by inject()
 
