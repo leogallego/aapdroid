@@ -21,7 +21,6 @@ import io.github.leogallego.ansiblejane.ui.components.DateFormatter
 import io.github.leogallego.ansiblejane.ui.components.TimeFormat
 import io.ktor.http.parseUrl
 import kotlinx.coroutines.flow.MutableStateFlow
-import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.combine
@@ -29,7 +28,6 @@ import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.flatMapLatest
 import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.flow.map
-import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import kotlinx.serialization.json.Json
@@ -52,24 +50,11 @@ class SettingsViewModel(
     private val _uiState = MutableStateFlow<SettingsUiState>(SettingsUiState.Loading)
     val uiState: StateFlow<SettingsUiState> = _uiState.asStateFlow()
 
-    val localDownloadState: StateFlow<LocalModelDownloadUiState> =
-        localModelRepository.downloadState
-            .map { it.toUi() }
-            .stateIn(
-                scope = viewModelScope,
-                started = SharingStarted.Eagerly,
-                initialValue = localModelRepository.downloadState.value.toUi(),
-            )
-
-    private val _localReadyIds = MutableStateFlow(emptySet<String>())
-    val localReadyIds: StateFlow<Set<String>> = _localReadyIds.asStateFlow()
-
-    val localModelCatalog: List<LocalModelUi> = localModelRepository.catalog().map { it.toUi() }
-    val hasAvx2Support: Boolean = localModelRepository.hasAvx2Support()
+    private val localModelCatalog: List<LocalModelUi> =
+        localModelRepository.catalog().map { it.toUi() }
+    private val hasAvx2Support: Boolean = localModelRepository.hasAvx2Support()
 
     init {
-        refreshLocalReadyIds()
-
         viewModelScope.launch {
             toolRouter.initialize()
 
@@ -116,6 +101,14 @@ class SettingsViewModel(
                 val preservedExpandedMcp = (current as? SettingsUiState.Ready)?.expandedMcpServers ?: emptySet()
                 val preservedExpandedCats = (current as? SettingsUiState.Ready)?.expandedCategories ?: emptySet()
                 val preservedLocalTools = (current as? SettingsUiState.Ready)?.localTools ?: initialLocalTools
+                val preservedLocalDownload = (current as? SettingsUiState.Ready)?.localDownloadState
+                    ?: localModelRepository.downloadState.value.toUi()
+                val preservedLocalReadyIds = (current as? SettingsUiState.Ready)?.localReadyIds
+                    ?: computeLocalReadyIds()
+                val preservedLocalCatalog = (current as? SettingsUiState.Ready)?.localModelCatalog
+                    ?: localModelCatalog
+                val preservedAvx2 = (current as? SettingsUiState.Ready)?.hasAvx2Support
+                    ?: hasAvx2Support
 
                 val allMcpTools = mcpConnectionRepository.mcpTools.value
                 val mcpServerTools = allMcpTools
@@ -148,6 +141,10 @@ class SettingsViewModel(
                     activeProviderKey = preservedActiveKey,
                     fetchedModels = preservedFetchedModels,
                     modelFetchState = preservedModelFetchState,
+                    localModelCatalog = preservedLocalCatalog,
+                    localDownloadState = preservedLocalDownload,
+                    localReadyIds = preservedLocalReadyIds,
+                    hasAvx2Support = preservedAvx2,
                     mcpEnabled = active?.mcpEnabled ?: false,
                     mcpServers = active?.mcpServerUrls ?: emptyList(),
                     connections = connections,
@@ -192,6 +189,13 @@ class SettingsViewModel(
             }
         }
 
+        viewModelScope.launch {
+            localModelRepository.downloadState
+                .map { it.toUi() }
+                .collect { downloadUi ->
+                    updateReady { copy(localDownloadState = downloadUi) }
+                }
+        }
     }
 
     // --- Tab ---
@@ -391,11 +395,14 @@ class SettingsViewModel(
         return localModelRepository.devicePerformance(modelId, contextTokens).toUi()
     }
 
-    private fun refreshLocalReadyIds() {
-        _localReadyIds.value = localModelRepository.catalog()
+    private fun computeLocalReadyIds(): Set<String> =
+        localModelRepository.catalog()
             .map { it.id }
             .filter { localModelRepository.isReady(it) }
             .toSet()
+
+    private fun refreshLocalReadyIds() {
+        updateReady { copy(localReadyIds = computeLocalReadyIds()) }
     }
 
     // --- Tools (MCP) ---

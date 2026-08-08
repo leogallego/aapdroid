@@ -23,8 +23,6 @@ import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import io.github.leogallego.ansiblejane.assistant.tools.ToolSource
 import io.github.leogallego.ansiblejane.presentation.settings.DevicePerformanceUi
-import io.github.leogallego.ansiblejane.presentation.settings.LocalModelDownloadUiState
-import io.github.leogallego.ansiblejane.presentation.settings.LocalModelUi
 import io.github.leogallego.ansiblejane.presentation.settings.SettingsTab
 import io.github.leogallego.ansiblejane.presentation.settings.SettingsUiState
 import io.github.leogallego.ansiblejane.presentation.settings.SettingsViewModel
@@ -42,8 +40,6 @@ fun SettingsScreen(
     viewModel: SettingsViewModel = koinViewModel()
 ) {
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
-    val localDownloadState by viewModel.localDownloadState.collectAsStateWithLifecycle()
-    val localReadyIds by viewModel.localReadyIds.collectAsStateWithLifecycle()
 
     LaunchedEffect(initialTab) {
         initialTab?.let { tabName ->
@@ -81,10 +77,6 @@ fun SettingsScreen(
                     onSwitchActiveProvider = { viewModel.switchActiveProvider(it) },
                     onFetchModels = { url, key -> viewModel.fetchAvailableModels(url, key) },
                     onClearFetchedModels = { viewModel.clearFetchedModels() },
-                    localModelCatalog = viewModel.localModelCatalog,
-                    localDownloadState = localDownloadState,
-                    localReadyIds = localReadyIds,
-                    hasAvx2Support = viewModel.hasAvx2Support,
                     onLocalModelPerformance = { viewModel.localModelPerformance(it) },
                     onDownloadLocalModel = { viewModel.downloadLocalModel(it) },
                     onCancelLocalModelDownload = { viewModel.cancelLocalModelDownload() },
@@ -134,10 +126,6 @@ private fun SettingsContent(
     onSwitchActiveProvider: (String) -> Unit,
     onFetchModels: (String, String?) -> Unit,
     onClearFetchedModels: () -> Unit,
-    localModelCatalog: List<LocalModelUi>,
-    localDownloadState: LocalModelDownloadUiState,
-    localReadyIds: Set<String>,
-    hasAvx2Support: Boolean,
     onLocalModelPerformance: (String) -> DevicePerformanceUi,
     onDownloadLocalModel: (String) -> Unit,
     onCancelLocalModelDownload: () -> Unit,
@@ -204,10 +192,10 @@ private fun SettingsContent(
                 onClearFetchedModels = onClearFetchedModels,
                 onSaveProviderConfig = onSaveProviderConfig,
                 onSwitchActiveProvider = onSwitchActiveProvider,
-                localModelCatalog = localModelCatalog,
-                localDownloadState = localDownloadState,
-                localReadyIds = localReadyIds,
-                hasAvx2Support = hasAvx2Support,
+                localModelCatalog = state.localModelCatalog,
+                localDownloadState = state.localDownloadState,
+                localReadyIds = state.localReadyIds,
+                hasAvx2Support = state.hasAvx2Support,
                 onLocalModelPerformance = onLocalModelPerformance,
                 onDownloadLocalModel = onDownloadLocalModel,
                 onCancelLocalModelDownload = onCancelLocalModelDownload,
