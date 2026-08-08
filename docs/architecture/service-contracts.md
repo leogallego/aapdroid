@@ -1,7 +1,7 @@
 # Ansible Jane — Architecture Service Contracts
 
 This document defines the enforceable architecture contracts for the Ansible Jane codebase.
-These contracts are checked during PR review (see `skills/pr-architecture-review/SKILL.md`).
+These contracts are checked during PR review (see `.agents/skills/pr-architecture-review/SKILL.md`).
 
 Violations of **hard rules** must be fixed before merge. **Soft guidelines** are advisory
 and flagged as recommendations.

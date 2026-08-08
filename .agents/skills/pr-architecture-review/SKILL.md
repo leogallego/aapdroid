@@ -58,10 +58,10 @@ and module:
 
 Always read these skills before reviewing, regardless of which files changed:
 
-- `skills/kotlin-coroutines-structured-concurrency/SKILL.md`
-- `skills/kotlin-flow-state-event-modeling/SKILL.md`
-- `skills/kotlin-multiplatform-expect-actual/SKILL.md`
-- `skills/android-community/koin-editor.md`
+- `.agents/skills/kotlin-coroutines-structured-concurrency/SKILL.md`
+- `.agents/skills/kotlin-flow-state-event-modeling/SKILL.md`
+- `.agents/skills/kotlin-multiplatform-expect-actual/SKILL.md`
+- `.agents/skills/android-community/koin-editor.md`
 
 ### Step 4: Auto-detect and load extra skills
 
@@ -69,15 +69,15 @@ Based on which files changed, load additional skills:
 
 | Changed files match | Load skill |
 |--------------------|------------|
-| `ui/`, `presentation/`, `*Screen.kt` | `skills/compose-skill/SKILL.md` |
-| `ui/`, `*Screen.kt` with state hoisting | `skills/compose-state-hoisting/SKILL.md` |
-| `assistant/engine/`, module boundaries | `skills/kotlin-project-architecture-review/SKILL.md` |
-| `data/`, `*Repository.kt`, `network/` | `skills/kotlin-data-kmp-data-layer/SKILL.md` |
-| `platform/`, `expect`/`actual` | `skills/kotlin-kmp-abstraction-decision/SKILL.md` |
-| `*Test.kt`, test infrastructure | `skills/kotlin-testing-kmp/SKILL.md`, `skills/compose-ui-testing-patterns/SKILL.md` |
-| `*ViewModel.kt`, state management | `skills/kotlin-flow-state-event-modeling/SKILL.md` |
-| Navigation, routing | `skills/kotlin-navigation-compose-multiplatform/SKILL.md` |
-| Compose performance concerns | `skills/compose-recomposition-performance/SKILL.md` |
+| `ui/`, `presentation/`, `*Screen.kt` | `.agents/skills/compose-skill/SKILL.md` |
+| `ui/`, `*Screen.kt` with state hoisting | `.agents/skills/compose-state-hoisting/SKILL.md` |
+| `assistant/engine/`, module boundaries | `.agents/skills/kotlin-project-architecture-review/SKILL.md` |
+| `data/`, `*Repository.kt`, `network/` | `.agents/skills/kotlin-data-kmp-data-layer/SKILL.md` |
+| `platform/`, `expect`/`actual` | `.agents/skills/kotlin-kmp-abstraction-decision/SKILL.md` |
+| `*Test.kt`, test infrastructure | `.agents/skills/kotlin-testing-kmp/SKILL.md`, `.agents/skills/compose-ui-testing-patterns/SKILL.md` |
+| `*ViewModel.kt`, state management | `.agents/skills/kotlin-flow-state-event-modeling/SKILL.md` |
+| Navigation, routing | `.agents/skills/kotlin-navigation-compose-multiplatform/SKILL.md` |
+| Compose performance concerns | `.agents/skills/compose-recomposition-performance/SKILL.md` |
 
 Log which skills were loaded and why.
 
