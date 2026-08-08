@@ -232,13 +232,28 @@ internal fun LocalModelRow(
             }
         }
     }
+    var importPrepareStarted by remember { mutableStateOf(false) }
     val importController = rememberLocalModelImportController(
-        onPreparing = onImportPreparing,
+        onPreparing = {
+            importPrepareStarted = true
+            onImportPreparing()
+        },
         onResult = { pick ->
             when (pick) {
-                is LocalModelImportPick.Success -> onImportFromPath(pick.absolutePath)
-                LocalModelImportPick.Failure -> onImportPickFailed()
-                LocalModelImportPick.Cancelled -> onCancelDownload()
+                is LocalModelImportPick.Success -> {
+                    importPrepareStarted = false
+                    onImportFromPath(pick.absolutePath)
+                }
+                LocalModelImportPick.Failure -> {
+                    importPrepareStarted = false
+                    onImportPickFailed()
+                }
+                LocalModelImportPick.Cancelled -> {
+                    if (importPrepareStarted) {
+                        importPrepareStarted = false
+                        onCancelDownload()
+                    }
+                }
             }
         },
     )
