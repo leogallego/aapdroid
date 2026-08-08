@@ -23,7 +23,6 @@ import java.io.File
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.TimeoutCancellationException
 import kotlinx.coroutines.delay
@@ -32,7 +31,6 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.flow
-import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeout
 
@@ -65,14 +63,14 @@ class LocalLlmProvider internal constructor(
     @Volatile private var engine: Engine? = null
     @Volatile private var conversation: Conversation? = null
     @Volatile private var loadedModelId: String? = null
-    private var idleReleaseJob: Job? = null
+    private val idleRelease = IdleReleaseScheduler(scope) { releaseEngine() }
 
     override fun generateStream(
         prompt: Prompt,
         tools: List<ToolDescriptor>,
         maxTokens: Int?,
     ): Flow<StreamFrame> = flow {
-        idleReleaseJob?.cancel()
+        idleRelease.cancel()
         val history = promptToBridgedHistory(prompt)
         if (history.isEmpty()) {
             throw LlmServerException("On-device provider requires at least one message")
@@ -102,7 +100,7 @@ class LocalLlmProvider internal constructor(
         } catch (e: Throwable) {
             throw mapEngineException(e)
         } finally {
-            scheduleIdleRelease()
+            idleRelease.schedule()
         }
 
         val bridged = BridgedAssistantMessage(
@@ -124,7 +122,7 @@ class LocalLlmProvider internal constructor(
     override fun modelInfo(): ModelInfo = ModelInfo(name = config.modelId, isLocal = true)
 
     override fun close() {
-        idleReleaseJob?.cancel()
+        idleRelease.cancel()
         releaseEngine()
     }
 
@@ -220,14 +218,6 @@ class LocalLlmProvider internal constructor(
         _engineState.value = LocalEngineState.Uninitialized
     }
 
-    private fun scheduleIdleRelease() {
-        idleReleaseJob?.cancel()
-        idleReleaseJob = scope.launch {
-            delay(IDLE_RELEASE_MS)
-            releaseEngine()
-        }
-    }
-
     private fun BridgedHistoryMessage.toLiteRtMessage(): LiteRtMessage {
         val safeText = sanitizeForLiteRt(text).orEmpty()
         return when (role) {
@@ -264,7 +254,6 @@ class LocalLlmProvider internal constructor(
     }
 
     companion object {
-        private const val IDLE_RELEASE_MS = 5L * 60 * 1000
         private const val GPU_DRAIN_MS = 750L
         private const val INFERENCE_TIMEOUT_MS = 120_000L
     }

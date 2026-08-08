@@ -111,6 +111,17 @@ for one-shot discovery of external endpoints would be over-engineering.
   (`shared/.../tools/ToolStub.kt`) — a direct subtype of `Tool` in the same package,
   satisfying the sealed constraint while keeping test support out of production paths.
 
+### On-device LLM (#264)
+
+- On-device inference is an `LlmProvider` implementation (`LocalLlmProvider` via
+  `LocalLlmProviderFactory`), not a parallel engine path. ChatEngine continues to own
+  the tool loop; LiteRT is used with `automaticToolCalling = false` in PR1.
+- Model download, SHA-256 verification, readiness, and AVX2 gating live behind
+  `ILocalModelRepository` (Koin binds the interface; fakes implement the same interface).
+- LiteRT types stay in `androidMain` / `jvmMain` actuals. `commonMain` / `commonTest`
+  must not import LiteRT APIs — use bridge types (`BridgedAssistantMessage`, etc.) and
+  repository interfaces for tests.
+
 ---
 
 ## 3. Module Boundaries
@@ -440,3 +451,4 @@ tombstones or "removed" markers.
 | 1.3.0 | 2026-06-26 | Add §11 String Resources contract (#293) |
 | 1.3.1 | 2026-08-05 | Document Android-only BackgroundWorker approval polling (#433) |
 | 1.3.2 | 2026-08-06 | Document `:baselineprofile` module + JUnit4 Macrobenchmark exception (#214) |
+| 1.3.3 | 2026-08-08 | Document on-device LLM behind `LlmProvider` + `ILocalModelRepository` (#264) |
