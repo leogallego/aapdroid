@@ -39,4 +39,11 @@ sealed interface LlmProviderConfig {
         val apiKey: String? = null,
         override val tokenSavingMode: TokenSavingMode = TokenSavingMode.STANDARD
     ) : LlmProviderConfig
+
+    @Serializable
+    @SerialName("on_device")
+    data class OnDevice(
+        val modelId: String,
+        override val tokenSavingMode: TokenSavingMode = TokenSavingMode.TOOLS_ONLY,
+    ) : LlmProviderConfig
 }
