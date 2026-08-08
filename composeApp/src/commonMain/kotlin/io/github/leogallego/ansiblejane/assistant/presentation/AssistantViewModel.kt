@@ -3,7 +3,6 @@ package io.github.leogallego.ansiblejane.assistant.presentation
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import io.github.leogallego.ansiblejane.assistant.data.IAssistantRepository
-import io.github.leogallego.ansiblejane.assistant.data.KnownProvider
 import io.github.leogallego.ansiblejane.assistant.data.LlmProviderConfig
 import io.github.leogallego.ansiblejane.assistant.data.TokenSavingMode
 import io.github.leogallego.ansiblejane.assistant.engine.ChatEngine
@@ -22,6 +21,9 @@ import io.github.leogallego.ansiblejane.assistant.engine.toAapRole
 import io.github.leogallego.ansiblejane.assistant.llm.GeminiLlmProvider
 import io.github.leogallego.ansiblejane.assistant.llm.KoogLlmProvider
 import io.github.leogallego.ansiblejane.assistant.llm.LlmProvider
+import io.github.leogallego.ansiblejane.assistant.llm.LocalLlmProviderFactory
+import io.github.leogallego.ansiblejane.assistant.local.ILocalModelRepository
+import io.github.leogallego.ansiblejane.assistant.local.LOCAL_MODEL_CATALOG
 import io.github.leogallego.ansiblejane.assistant.tools.CachedMcpTool
 import io.github.leogallego.ansiblejane.assistant.tools.LocalTool
 import io.github.leogallego.ansiblejane.assistant.tools.Tool
@@ -52,6 +54,7 @@ class AssistantViewModel(
     private val tokenManager: ITokenManager,
     private val manifestRepository: IToolManifestRepository,
     private val toolRouter: ToolRouter,
+    private val localModelRepository: ILocalModelRepository,
     private val localTools: List<LocalTool> = emptyList()
 ) : ViewModel() {
 
@@ -76,13 +79,13 @@ class AssistantViewModel(
                 val oldKey = cachedProviderKey
                 _llmConfig.update { config }
                 if (config != null && oldKey != null) {
-                    val newKey = when (config) {
-                        is LlmProviderConfig.OpenAiCompatible ->
-                            "${config.url}|${config.model}|${config.apiKey}"
-                        is LlmProviderConfig.OnDevice ->
-                            "on-device|${config.modelId}"
+                    val configIdentity = providerCacheIdentity(config)
+                    val cachedIdentity = when (config) {
+                        // Strip trailing trustSelfSigned segment from OpenAI cache keys.
+                        is LlmProviderConfig.OpenAiCompatible -> oldKey.substringBeforeLast("|")
+                        is LlmProviderConfig.OnDevice -> oldKey
                     }
-                    if (newKey != oldKey.substringBeforeLast("|")) {
+                    if (configIdentity != cachedIdentity) {
                         cachedProvider?.close()
                         cachedProvider = null
                         cachedProviderKey = null
@@ -188,23 +191,6 @@ class AssistantViewModel(
             return
         }
 
-        if (config is LlmProviderConfig.OnDevice) {
-            _uiState.update { current ->
-                if (current is AssistantUiState.Active) {
-                    current.copy(
-                        messages = (current.messages + ChatMessage(
-                            role = Role.ASSISTANT,
-                            content = "On-device model support is not wired yet.",
-                            source = ResponseSource.LLM
-                        )).toImmutableList()
-                    )
-                } else current
-            }
-            return
-        }
-
-        val openAiConfig = config as LlmProviderConfig.OpenAiCompatible
-
         val userMessage = ChatMessage(role = Role.USER, content = text)
         repository.addMessage(userMessage)
 
@@ -214,7 +200,7 @@ class AssistantViewModel(
         ) }
 
         val trustSelfSigned = tokenManager.activeInstance.value?.trustSelfSigned == true
-        val provider = getOrCreateProvider(openAiConfig, trustSelfSigned)
+        val provider = getOrCreateProvider(config, trustSelfSigned)
 
         generateJob?.cancel()
         generateJob = viewModelScope.launch {
@@ -229,13 +215,9 @@ class AssistantViewModel(
             toolRouter.registerMcpTools(mcpTools)
 
             Log.d(TAG, "ROUTE: query=\"$text\", ${localTools.size} local, ${mcpTools.size} mcp, role=$aapRole")
-            // #453: capability from active provider/model; Simple raises TokenSavingMode ceiling
-            val capability = ModelCapabilityResolver.resolve(
-                provider = KnownProvider.fromUrl(openAiConfig.url),
-                model = openAiConfig.model,
-                onDevice = false, // LiteRT / on-device flag lands with #264
-            )
-            val userMode = openAiConfig.tokenSavingMode
+            // #453 / #264: capability from active provider/model; Simple raises TokenSavingMode ceiling
+            val capability = resolveCapabilityForConfig(config)
+            val userMode = config.tokenSavingMode
             val mode = ModelCapabilityResolver.effectiveTokenSavingMode(capability, userMode)
             val queryResult = toolRouter.getToolsForQuery(
                 query = text,
@@ -303,10 +285,14 @@ class AssistantViewModel(
             val toolExecutor = ToolExecutor(budgetedTools)
             val engine = ChatEngine(provider, toolExecutor)
             val maxTokens: Int? = null
-            val contextChars = when (mode) {
-                TokenSavingMode.STANDARD -> 16_000
-                TokenSavingMode.TOKEN_SAVER -> 8_000
-                TokenSavingMode.TOOLS_ONLY -> 4_000
+            val contextChars = when (config) {
+                is LlmProviderConfig.OnDevice ->
+                    LOCAL_MODEL_CATALOG.find { it.id == config.modelId }?.defaultContextTokens ?: 4_096
+                is LlmProviderConfig.OpenAiCompatible -> when (mode) {
+                    TokenSavingMode.STANDARD -> 16_000
+                    TokenSavingMode.TOKEN_SAVER -> 8_000
+                    TokenSavingMode.TOOLS_ONLY -> 4_000
+                }
             }
 
             val textBuilder = StringBuilder()
@@ -435,23 +421,43 @@ class AssistantViewModel(
     }
 
     private fun getOrCreateProvider(
-        config: LlmProviderConfig.OpenAiCompatible,
+        config: LlmProviderConfig,
         trustSelfSigned: Boolean
     ): LlmProvider {
-        Log.d(TAG, "PROVIDER: apiKeyPresent=${config.apiKey != null}, model=${config.model}")
-        val key = "${config.url}|${config.model}|${config.apiKey}|$trustSelfSigned"
-        cachedProvider?.let { if (cachedProviderKey == key) return it }
-        cachedProvider?.close()
-        val isGemini = config.url.contains("generativelanguage.googleapis.com")
-        val provider: LlmProvider = if (isGemini) {
-            GeminiLlmProvider(apiKey = config.apiKey ?: "", modelId = config.model)
-        } else {
-            KoogLlmProvider(config, trustSelfSigned)
+        when (config) {
+            is LlmProviderConfig.OnDevice -> {
+                val key = providerCacheIdentity(config)
+                Log.d(TAG, "PROVIDER: onDevice modelId=${config.modelId}")
+                cachedProvider?.let { if (cachedProviderKey == key) return it }
+                cachedProvider?.close()
+                return LocalLlmProviderFactory.create(config, localModelRepository).also {
+                    cachedProvider = it
+                    cachedProviderKey = key
+                }
+            }
+            is LlmProviderConfig.OpenAiCompatible -> {
+                Log.d(TAG, "PROVIDER: apiKeyPresent=${config.apiKey != null}, model=${config.model}")
+                val key = "${providerCacheIdentity(config)}|$trustSelfSigned"
+                cachedProvider?.let { if (cachedProviderKey == key) return it }
+                cachedProvider?.close()
+                val isGemini = config.url.contains("generativelanguage.googleapis.com")
+                val provider: LlmProvider = if (isGemini) {
+                    GeminiLlmProvider(apiKey = config.apiKey ?: "", modelId = config.model)
+                } else {
+                    KoogLlmProvider(config, trustSelfSigned)
+                }
+                return provider.also {
+                    cachedProvider = it
+                    cachedProviderKey = key
+                }
+            }
         }
-        return provider.also {
-            cachedProvider = it
-            cachedProviderKey = key
-        }
+    }
+
+    private fun providerCacheIdentity(config: LlmProviderConfig): String = when (config) {
+        is LlmProviderConfig.OnDevice -> "local|${config.modelId}"
+        is LlmProviderConfig.OpenAiCompatible ->
+            "${config.url}|${config.model}|${config.apiKey}"
     }
 
     private fun buildCachedTools(manifest: ToolManifest): List<CachedMcpTool> {

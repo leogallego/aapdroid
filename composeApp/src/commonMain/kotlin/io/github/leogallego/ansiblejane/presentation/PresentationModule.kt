@@ -57,6 +57,7 @@ val presentationModule = module {
             tokenManager = get(),
             manifestRepository = get(),
             toolRouter = get(),
+            localModelRepository = get(),
             localTools = getAll<LocalTool>()
         )
     }
