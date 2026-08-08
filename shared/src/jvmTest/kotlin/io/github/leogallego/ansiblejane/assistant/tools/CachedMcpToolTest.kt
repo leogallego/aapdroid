@@ -3,7 +3,7 @@ package io.github.leogallego.ansiblejane.assistant.tools
 import io.github.leogallego.ansiblejane.model.AapInstance
 import io.github.leogallego.ansiblejane.model.McpServerConfig
 import io.github.leogallego.ansiblejane.network.mcp.McpServerManager
-import io.github.leogallego.ansiblejane.network.mcp.McpToolDefinition
+import io.github.leogallego.ansiblejane.model.McpToolDefinition
 import io.ktor.client.HttpClient
 import io.ktor.client.engine.okhttp.OkHttp
 import io.ktor.client.plugins.sse.SSE
@@ -105,7 +105,7 @@ class CachedMcpToolTest {
         val tool = CachedMcpTool(
             mcpToolDef = McpToolDefinition("ping", "Ping"),
             serverLabel = "test-server",
-            serverManager = manager
+            toolInvoker = manager
         )
 
         val result = tool.execute(JsonObject(emptyMap()))
@@ -118,7 +118,7 @@ class CachedMcpToolTest {
         val tool = CachedMcpTool(
             mcpToolDef = McpToolDefinition("ping", "Ping"),
             serverLabel = "nonexistent-server",
-            serverManager = manager
+            toolInvoker = manager
         )
 
         val result = tool.execute(JsonObject(emptyMap()))
@@ -147,7 +147,7 @@ class CachedMcpToolTest {
         val tool = CachedMcpTool(
             mcpToolDef = McpToolDefinition("ping", "Ping"),
             serverLabel = "test-server",
-            serverManager = manager
+            toolInvoker = manager
         )
 
         val result = tool.execute(JsonObject(emptyMap()))
@@ -161,7 +161,7 @@ class CachedMcpToolTest {
         val tool = CachedMcpTool(
             mcpToolDef = McpToolDefinition("ping", "Ping the server"),
             serverLabel = "my-mcp",
-            serverManager = manager
+            toolInvoker = manager
         )
 
         assertTrue(tool.spec.description.startsWith("[my-mcp]"))
@@ -173,14 +173,14 @@ class CachedMcpToolTest {
         val create = CachedMcpTool(
             mcpToolDef = McpToolDefinition("hosts_create", "Create host"),
             serverLabel = "s",
-            serverManager = manager
+            toolInvoker = manager
         )
         assertTrue(create.isDestructive)
 
         val read = CachedMcpTool(
             mcpToolDef = McpToolDefinition("hosts_read", "List hosts"),
             serverLabel = "s",
-            serverManager = manager
+            toolInvoker = manager
         )
         assertFalse(read.isDestructive)
     }
@@ -203,7 +203,7 @@ class CachedMcpToolTest {
         val tool = CachedMcpTool(
             mcpToolDef = McpToolDefinition("ping", "Ping"),
             serverLabel = "test-server",
-            serverManager = manager
+            toolInvoker = manager
         )
 
         val args = buildJsonObject {

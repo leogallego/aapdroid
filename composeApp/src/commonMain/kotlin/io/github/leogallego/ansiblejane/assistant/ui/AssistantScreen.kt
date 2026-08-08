@@ -71,7 +71,7 @@ import io.github.leogallego.ansiblejane.assistant.engine.Role
 import io.github.leogallego.ansiblejane.assistant.engine.ToolUsage
 import io.github.leogallego.ansiblejane.assistant.presentation.AssistantUiState
 import io.github.leogallego.ansiblejane.assistant.presentation.AssistantViewModel
-import io.github.leogallego.ansiblejane.network.mcp.McpConnectionState
+import io.github.leogallego.ansiblejane.model.McpConnectionState
 import io.github.leogallego.ansiblejane.ui.theme.AnsibleJaneTheme
 import kotlinx.collections.immutable.persistentListOf
 import org.jetbrains.compose.resources.stringResource

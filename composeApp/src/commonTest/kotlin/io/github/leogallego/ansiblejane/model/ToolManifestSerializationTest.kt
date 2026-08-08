@@ -1,7 +1,7 @@
 package io.github.leogallego.ansiblejane.model
 
-import io.github.leogallego.ansiblejane.network.mcp.McpServerInfo
-import io.github.leogallego.ansiblejane.network.mcp.McpToolDefinition
+import io.github.leogallego.ansiblejane.model.McpServerInfo
+import io.github.leogallego.ansiblejane.model.McpToolDefinition
 import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonObject

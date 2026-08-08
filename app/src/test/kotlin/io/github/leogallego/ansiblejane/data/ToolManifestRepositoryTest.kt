@@ -7,8 +7,8 @@ import androidx.datastore.preferences.core.edit
 import androidx.datastore.preferences.core.stringPreferencesKey
 import io.github.leogallego.ansiblejane.model.ServerToolCache
 import io.github.leogallego.ansiblejane.model.ToolManifest
-import io.github.leogallego.ansiblejane.network.mcp.McpServerInfo
-import io.github.leogallego.ansiblejane.network.mcp.McpToolDefinition
+import io.github.leogallego.ansiblejane.model.McpServerInfo
+import io.github.leogallego.ansiblejane.model.McpToolDefinition
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.test.runTest
 import org.junit.After

@@ -60,6 +60,22 @@ layers below it. No layer skipping is permitted.
 from user-provided URLs. This is documented and intentional — creating a repository
 for one-shot discovery of external endpoints would be over-engineering.
 
+`ModelFetcher` owns HTTP client creation/teardown internally. ViewModels must not call
+`createPlatformHttpClient` or import `network` for this flow.
+
+MCP connection lifecycle is exposed through `IMcpConnectionRepository` (implemented by
+`McpServerManager`). Unauthorized session events are exposed through
+`IAuthRepository.unauthorizedEvent` (backed by network `AuthEvents`). Presentation and
+UI must use those interfaces — not `network.mcp` / `AuthEvents` directly.
+
+Nav/session bootstrap (`AppNavigation`) may observe `IAuthRepository.unauthorizedEvent`
+and `ITokenManager` instance flows. That is intentional session wiring, not a general
+license for UI to call repositories for feature data.
+
+`IMcpConnectionRepository` intentionally lives in `data/` while
+`McpServerManager` implements it from `network.mcp/`. This is an explicit exception to
+the §2 same-package guideline so presentation never imports `network`.
+
 ---
 
 ## 2. Interface Contracts

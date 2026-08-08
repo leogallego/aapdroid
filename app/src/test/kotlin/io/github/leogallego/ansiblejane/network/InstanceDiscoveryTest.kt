@@ -1,5 +1,7 @@
 package io.github.leogallego.ansiblejane.network
 
+import io.github.leogallego.ansiblejane.model.ApiVersion
+
 import io.github.leogallego.ansiblejane.model.AapComponent
 import io.github.leogallego.ansiblejane.model.PlatformType
 import kotlinx.coroutines.test.runTest

@@ -9,7 +9,7 @@ import io.github.leogallego.ansiblejane.data.backup.BackupDecryptionException
 import io.github.leogallego.ansiblejane.data.backup.BackupEnvelope
 import io.github.leogallego.ansiblejane.data.backup.BackupInstance
 import io.github.leogallego.ansiblejane.data.backup.BackupManager
-import io.github.leogallego.ansiblejane.network.ApiVersion
+import io.github.leogallego.ansiblejane.model.ApiVersion
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow

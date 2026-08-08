@@ -1,5 +1,7 @@
 package io.github.leogallego.ansiblejane.network
 
+import io.github.leogallego.ansiblejane.model.ApiVersion
+
 import io.ktor.client.plugins.HttpTimeout
 import io.ktor.client.plugins.contentnegotiation.ContentNegotiation
 import io.ktor.client.plugins.defaultRequest

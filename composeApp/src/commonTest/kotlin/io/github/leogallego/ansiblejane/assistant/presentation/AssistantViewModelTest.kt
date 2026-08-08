@@ -13,13 +13,11 @@ import io.github.leogallego.ansiblejane.fakes.FakeAssistantRepository
 import io.github.leogallego.ansiblejane.fakes.FakeLocalModelRepository
 import io.github.leogallego.ansiblejane.fakes.FakeTokenManager
 import io.github.leogallego.ansiblejane.fakes.FakeToolManifestRepository
-import io.github.leogallego.ansiblejane.network.mcp.McpServerManager
+import io.github.leogallego.ansiblejane.fakes.FakeMcpConnectionRepository
+import io.github.leogallego.ansiblejane.fakes.FakeMcpToolInvoker
 import io.github.leogallego.ansiblejane.setupMainDispatcher
 import io.github.leogallego.ansiblejane.tearDownMainDispatcher
 import io.github.leogallego.ansiblejane.testInstance
-import io.ktor.client.HttpClient
-import io.ktor.client.engine.mock.MockEngine
-import io.ktor.client.engine.mock.respond
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.test.advanceUntilIdle
 import kotlinx.coroutines.test.runTest
@@ -36,18 +34,14 @@ class AssistantViewModelTest {
 
     private lateinit var fakeAssistantRepo: FakeAssistantRepository
     private lateinit var fakeTokenManager: FakeTokenManager
-    private lateinit var mcpServerManager: McpServerManager
+    private lateinit var mcpConnectionRepository: FakeMcpConnectionRepository
 
     @BeforeTest
     fun setup() {
         setupMainDispatcher()
         fakeAssistantRepo = FakeAssistantRepository()
         fakeTokenManager = FakeTokenManager()
-        mcpServerManager = McpServerManager(
-            ktorClientFactory = { _, _ ->
-                HttpClient(MockEngine) { engine { addHandler { respond("") } } }
-            }
-        )
+        mcpConnectionRepository = FakeMcpConnectionRepository()
     }
 
     @AfterTest
@@ -62,7 +56,8 @@ class AssistantViewModelTest {
     }
 
     private fun createViewModel(localTools: List<LocalTool> = emptyList()) = AssistantViewModel(
-        mcpServerManager = mcpServerManager,
+        mcpConnectionRepository = mcpConnectionRepository,
+        mcpToolInvoker = FakeMcpToolInvoker(),
         repository = fakeAssistantRepo,
         tokenManager = fakeTokenManager,
         manifestRepository = FakeToolManifestRepository(),

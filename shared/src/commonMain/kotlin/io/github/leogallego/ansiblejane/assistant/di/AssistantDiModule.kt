@@ -1,5 +1,6 @@
 package io.github.leogallego.ansiblejane.assistant.di
 
+import io.github.leogallego.ansiblejane.assistant.data.ModelFetcher
 import io.github.leogallego.ansiblejane.assistant.engine.ToolRouter
 import io.github.leogallego.ansiblejane.assistant.engine.toAapRole
 import io.github.leogallego.ansiblejane.assistant.local.ILocalModelRepository
@@ -8,6 +9,8 @@ import io.github.leogallego.ansiblejane.assistant.tools.LocalTool
 import io.github.leogallego.ansiblejane.assistant.tools.local.*
 import io.github.leogallego.ansiblejane.data.ITokenManager
 import io.github.leogallego.ansiblejane.network.createPlatformHttpClient
+import io.github.leogallego.ansiblejane.data.IMcpConnectionRepository
+import io.github.leogallego.ansiblejane.assistant.tools.McpToolInvoker
 import io.github.leogallego.ansiblejane.network.mcp.McpServerManager
 import io.github.leogallego.ansiblejane.platform.IDeviceResources
 import io.github.leogallego.ansiblejane.platform.asIDeviceResources
@@ -21,6 +24,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import org.koin.core.qualifier.named
 import org.koin.dsl.bind
+import org.koin.dsl.binds
 import org.koin.dsl.module
 
 val sharedAssistantModule = module {
@@ -33,6 +37,8 @@ val sharedAssistantModule = module {
             scope = CoroutineScope(SupervisorJob() + Dispatchers.Default),
         )
     } bind ILocalModelRepository::class
+
+    single { ModelFetcher(json = get()) }
 
     single {
         McpServerManager(
@@ -55,7 +61,7 @@ val sharedAssistantModule = module {
                 }
             }
         )
-    }
+    } binds arrayOf(IMcpConnectionRepository::class, McpToolInvoker::class)
 
     single(named("llm")) {
         createPlatformHttpClient {

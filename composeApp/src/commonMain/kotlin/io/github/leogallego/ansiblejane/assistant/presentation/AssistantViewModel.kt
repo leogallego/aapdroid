@@ -29,7 +29,8 @@ import io.github.leogallego.ansiblejane.assistant.tools.Tool
 import io.github.leogallego.ansiblejane.data.ITokenManager
 import io.github.leogallego.ansiblejane.data.IToolManifestRepository
 import io.github.leogallego.ansiblejane.model.ToolManifest
-import io.github.leogallego.ansiblejane.network.mcp.McpServerManager
+import io.github.leogallego.ansiblejane.data.IMcpConnectionRepository
+import io.github.leogallego.ansiblejane.assistant.tools.McpToolInvoker
 import io.github.leogallego.ansiblejane.assistant.engine.DebugLog as Log
 
 import kotlinx.collections.immutable.persistentListOf
@@ -48,7 +49,8 @@ import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 
 class AssistantViewModel(
-    private val mcpServerManager: McpServerManager,
+    private val mcpConnectionRepository: IMcpConnectionRepository,
+    private val mcpToolInvoker: McpToolInvoker,
     private val repository: IAssistantRepository,
     private val tokenManager: ITokenManager,
     private val manifestRepository: IToolManifestRepository,
@@ -108,7 +110,7 @@ class AssistantViewModel(
 
                     if (instance != null) {
                         _uiState.update { AssistantUiState.Loading }
-                        mcpServerManager.disconnectAll()
+                        mcpConnectionRepository.disconnectAll()
 
                         val manifest = manifestRepository.loadManifest(instance.id)
                         if (manifest != null) {
@@ -118,25 +120,25 @@ class AssistantViewModel(
                                 ?.toSet() ?: emptySet()
                             val cachedTools = buildCachedTools(manifest)
                                 .filter { it.serverLabel in configLabels }
-                            mcpServerManager.setCachedTools(cachedTools)
+                            mcpConnectionRepository.setCachedTools(cachedTools)
                             Log.d(TAG, "CACHE: loaded ${cachedTools.size} cached tools for ${instance.id}")
                         }
 
                         _uiState.update {
                             AssistantUiState.Active(
                                 messages = repository.getHistory().toImmutableList(),
-                                connections = mcpServerManager.connections.value
+                                connections = mcpConnectionRepository.connections.value
                             )
                         }
 
                         backgroundConnectJob = viewModelScope.launch {
                             try {
                                 if (manifest != null) {
-                                    mcpServerManager.connectAllWithCache(instance, manifest)
+                                    mcpConnectionRepository.connectAllWithCache(instance, manifest)
                                 } else {
-                                    mcpServerManager.connectAll(instance)
+                                    mcpConnectionRepository.connectAll(instance)
                                 }
-                                mcpServerManager.buildManifest(instance)?.let {
+                                mcpConnectionRepository.buildManifest(instance)?.let {
                                     manifestRepository.saveManifest(instance.id, it)
                                 }
                             } catch (e: CancellationException) {
@@ -146,14 +148,14 @@ class AssistantViewModel(
                             }
                         }
                     } else {
-                        mcpServerManager.disconnectAll()
+                        mcpConnectionRepository.disconnectAll()
                         _uiState.update { AssistantUiState.Idle }
                     }
                 }
         }
 
         viewModelScope.launch {
-            mcpServerManager.connections.collect { connections ->
+            mcpConnectionRepository.connections.collect { connections ->
                 _uiState.update { current ->
                     if (current is AssistantUiState.Active) current.copy(connections = connections)
                     else current
@@ -205,8 +207,8 @@ class AssistantViewModel(
         generateJob = viewModelScope.launch {
             toolRouter.initialize()
 
-            mcpServerManager.refreshConnections()
-            val mcpTools = mcpServerManager.mcpTools.value
+            mcpConnectionRepository.refreshConnections()
+            val mcpTools = mcpConnectionRepository.mcpTools.value
             val activeInstance = tokenManager.activeInstance.value
             val serverConfigs = activeInstance?.mcpServerUrls ?: emptyList()
             // No instance or role not yet fetched → AUDITOR (fail-closed)
@@ -236,7 +238,7 @@ class AssistantViewModel(
             if (queryResult.tools.isEmpty()) {
                 val noCategory = !queryResult.categoryMatched
                 Log.d(TAG, "ROUTE: no tools path — categoryMatched=${queryResult.categoryMatched}")
-                val hasMcp = mcpServerManager.mcpTools.value.isNotEmpty()
+                val hasMcp = mcpConnectionRepository.mcpTools.value.isNotEmpty()
                 val content = if (noCategory) {
                     "I can help you query your AAP instance. Try asking about:\n\n" +
                         "- **Inventory** — hosts, groups, inventories\n" +
@@ -466,7 +468,7 @@ class AssistantViewModel(
                     serverLabel = serverCache.label,
                     toolset = serverCache.toolset,
                     readOnly = serverCache.readOnly,
-                    serverManager = mcpServerManager
+                    toolInvoker = mcpToolInvoker
                 )
             }
         }
@@ -480,7 +482,7 @@ class AssistantViewModel(
         cachedProvider = null
         viewModelScope.launch {
             withContext(NonCancellable + Dispatchers.Default) {
-                mcpServerManager.disconnectAll()
+                mcpConnectionRepository.disconnectAll()
             }
         }
     }
