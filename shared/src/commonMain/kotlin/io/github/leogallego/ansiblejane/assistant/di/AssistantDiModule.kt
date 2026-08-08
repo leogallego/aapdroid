@@ -162,21 +162,26 @@ val sharedAssistantModule = module {
     single { ListHubGroupsLocalTool(get(), get()) } bind LocalTool::class
     single { ListHubRolesLocalTool(get(), get()) } bind LocalTool::class
 
-    // Meta — role from active instance (not lastRoutingContext alone) so list/search
-    // honor auditor filtering even before the first getToolsForQuery in a process.
+    // Meta — role + MCP configs from active instance (not lastRoutingContext alone)
+    // so list/search honor auditor + readOnly filters before the first getToolsForQuery.
+    // Pass non-null configs (empty when unset) so we never fall back to a stale context.
     single {
         ListToolsLocalTool {
-            val role = get<ITokenManager>().activeInstance.value?.toAapRole()
-            get<ToolRouter>().getRoutableTools(role)
+            val instance = get<ITokenManager>().activeInstance.value
+            get<ToolRouter>().getRoutableTools(
+                aapRole = instance?.toAapRole(),
+                serverConfigs = instance?.mcpServerUrls ?: emptyList(),
+            )
         }
     } bind LocalTool::class
     single {
         SearchAvailableToolsLocalTool { query, maxResults ->
-            val role = get<ITokenManager>().activeInstance.value?.toAapRole()
+            val instance = get<ITokenManager>().activeInstance.value
             get<ToolRouter>().searchAvailableTools(
                 query,
                 maxResults = maxResults,
-                aapRole = role
+                serverConfigs = instance?.mcpServerUrls ?: emptyList(),
+                aapRole = instance?.toAapRole(),
             )
         }
     } bind LocalTool::class

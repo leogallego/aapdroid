@@ -294,6 +294,9 @@ class ToolRouter(
 
         private val WRITE_ACTIONS = Tool.WRITE_SUFFIXES
 
+        /** MCP readOnly allowlist — see [Tool.READ_SUFFIXES] (#335). */
+        private val READ_ACTIONS = Tool.READ_SUFFIXES
+
         private val STOP_WORDS = setOf(
             "list", "get", "show", "what", "are", "the", "is", "a", "an",
             "my", "all", "me", "how", "many", "which", "do", "i", "have",
@@ -481,22 +484,40 @@ class ToolRouter(
 
     fun isToolEnabled(toolName: String, source: ToolSource, serverLabel: String? = null): Boolean = synchronized(this) {
         val key = ToolKey(toolName, source, serverLabel)
-        val isAuto = isAutoDisabledByName(toolName, source)
+        val isAuto = isAutoDisabledByName(toolName, source, serverLabel)
         key !in userDisabled && (!isAuto || key in userEnabled)
     }
 
     fun isAutoDisabled(toolName: String, source: ToolSource, serverLabel: String? = null): Boolean = synchronized(this) {
-        isAutoDisabledByName(toolName, source)
+        isAutoDisabledByName(toolName, source, serverLabel)
     }
 
-    private fun isAutoDisabledByName(toolName: String, source: ToolSource): Boolean {
-        return autoDisabled.any { it.name == toolName && it.source == source }
+    /**
+     * Auto-disable match honors [serverLabel] (#342).
+     * - Exact label match, or unlabeled key (pre-MCP-registration fallback).
+     * - Null [serverLabel] query: true if the name is auto-disabled for any key
+     *   (callers that omit label, e.g. before servers are known).
+     */
+    private fun isAutoDisabledByName(
+        toolName: String,
+        source: ToolSource,
+        serverLabel: String?,
+    ): Boolean {
+        return autoDisabled.any { key ->
+            if (key.name != toolName || key.source != source) return@any false
+            when {
+                key.serverLabel == serverLabel -> true
+                key.serverLabel == null -> true // unlabeled applies to all servers
+                serverLabel == null -> true // any-server check when label omitted
+                else -> false
+            }
+        }
     }
 
     suspend fun toggleToolEnabled(toolName: String, source: ToolSource, serverLabel: String? = null, enabled: Boolean) {
         val snapshot = synchronized(this) {
             val key = ToolKey(toolName, source, serverLabel)
-            val isAuto = isAutoDisabledByName(toolName, source)
+            val isAuto = isAutoDisabledByName(toolName, source, serverLabel)
             if (isAuto) {
                 userDisabled.remove(key)
                 if (enabled) userEnabled.add(key) else userEnabled.remove(key)
@@ -594,9 +615,7 @@ class ToolRouter(
                 if (!isToolEnabled(tool.spec.name, ToolSource.MCP, tool.serverLabel)) continue
                 if (!passesRoleFilter(tool, aapRole)) continue
 
-                val passesReadOnly = tool.serverLabel !in readOnlyLabels ||
-                    WRITE_ACTIONS.none { action -> tool.spec.name.endsWith(action) }
-                if (!passesReadOnly) continue
+                if (!passesMcpReadOnlyFilter(tool, readOnlyLabels)) continue
 
                 val toolToolset = tool.toolset
                 val toolsetCategories = toolToolset?.let { TOOLSET_CATEGORY_MAP[it] }
@@ -723,19 +742,19 @@ class ToolRouter(
      * Search all enabled tools by name + description tokens (meta-search / #120).
      * Stable: score desc, then name asc.
      *
-     * When [serverConfigs] is empty and [aapRole] is null, reuses the last
-     * [getToolsForQuery] routing context so auditor / read-only filters apply
-     * to LLM-invoked meta-search.
+     * [serverConfigs]: `null` = reuse last [getToolsForQuery] context;
+     * non-null (including empty) = use that list (do not fall back).
+     * [aapRole] `null` falls back to last routing role (auditor fail-closed when unknown).
      */
     fun searchAvailableTools(
         query: String,
         maxResults: Int = 20,
-        serverConfigs: List<McpServerConfig> = emptyList(),
+        serverConfigs: List<McpServerConfig>? = null,
         aapRole: AapRole? = null
     ): List<Tool> = synchronized(this) {
         val stemmedQuery = stemQueryTokens(tokenizeQuery(query))
         if (stemmedQuery.isEmpty()) return emptyList()
-        val effectiveConfigs = serverConfigs.ifEmpty { lastRoutingContext.serverConfigs }
+        val effectiveConfigs = serverConfigs ?: lastRoutingContext.serverConfigs
         val effectiveRole = aapRole ?: lastRoutingContext.aapRole
         val candidates = collectEnabledTools(effectiveConfigs, effectiveRole)
         return cherryPick(candidates, stemmedQuery, requireOverlap = true).take(maxResults.coerceAtLeast(0))
@@ -819,10 +838,18 @@ class ToolRouter(
         val enabledMcp = mcpTools.filter { tool ->
             isToolEnabled(tool.spec.name, ToolSource.MCP, tool.serverLabel) &&
                 passesRoleFilter(tool, aapRole) &&
-                (tool.serverLabel !in readOnlyLabels ||
-                    WRITE_ACTIONS.none { action -> tool.spec.name.endsWith(action) })
+                passesMcpReadOnlyFilter(tool, readOnlyLabels)
         }
         return enabledLocal + enabledMcp
+    }
+
+    /**
+     * #335: MCP `readOnly` servers expose only [READ_ACTIONS] suffixes.
+     * Unknown verbs are blocked by default. Non-readOnly labels always pass.
+     */
+    private fun passesMcpReadOnlyFilter(tool: Tool, readOnlyLabels: Set<String>): Boolean {
+        if (tool.serverLabel !in readOnlyLabels) return true
+        return READ_ACTIONS.any { action -> tool.spec.name.endsWith(action) }
     }
 
     /**
@@ -887,14 +914,25 @@ class ToolRouter(
     }
 
     /**
-     * Like [getAllRegisteredTools] but applies a role filter so
-     * [ListToolsLocalTool] does not disclose write tools to auditors.
+     * Like [getAllRegisteredTools] but applies role + MCP read-only filters so
+     * [ListToolsLocalTool] does not disclose write tools to auditors or from
+     * `readOnly` MCP servers (#335).
      *
-     * Prefer an explicit [aapRole] from the active instance; falls back to the
-     * last [getToolsForQuery] context. Unknown/`null` fail-closes like auditor.
+     * Prefer an explicit [aapRole] / [serverConfigs] from the active instance;
+     * `null` falls back to the last [getToolsForQuery] context.
+     * Unknown/`null` role fail-closes like auditor.
+     * Non-null [serverConfigs] (including empty) is used as-is — no stale fallback.
      */
-    fun getRoutableTools(aapRole: AapRole? = null): List<Pair<Tool, ToolSource>> = synchronized(this) {
+    fun getRoutableTools(
+        aapRole: AapRole? = null,
+        serverConfigs: List<McpServerConfig>? = null,
+    ): List<Pair<Tool, ToolSource>> = synchronized(this) {
         val role = aapRole ?: lastRoutingContext.aapRole
+        val configs = serverConfigs ?: lastRoutingContext.serverConfigs
+        val readOnlyLabels = configs
+            .filter { it.readOnly }
+            .map { it.label }
+            .toSet()
         val result = mutableListOf<Pair<Tool, ToolSource>>()
         localTools.forEach { tool ->
             if (isToolEnabled(tool.spec.name, ToolSource.LOCAL) && passesRoleFilter(tool, role)) {
@@ -903,7 +941,8 @@ class ToolRouter(
         }
         mcpTools.forEach { tool ->
             if (isToolEnabled(tool.spec.name, ToolSource.MCP, tool.serverLabel) &&
-                passesRoleFilter(tool, role)
+                passesRoleFilter(tool, role) &&
+                passesMcpReadOnlyFilter(tool, readOnlyLabels)
             ) {
                 result.add(tool to ToolSource.MCP)
             }
@@ -911,15 +950,33 @@ class ToolRouter(
         result
     }
 
+    /**
+     * Auto-disable MCP tools that overlap with active locals (#342).
+     *
+     * When overlapping MCP tools are registered, keys include [Tool.serverLabel]
+     * so the same name on another server is not treated as disabled.
+     * Before MCP registration, unlabeled keys preserve pre-connect overlap checks.
+     *
+     * Per-service mapping (Controller vs Gateway vs EDA for shared names like
+     * `users_list`) is deferred — see #336 Phase 3 follow-up.
+     */
     private fun autoDisableOverlappingMcpTools() {
         autoDisabled.clear()
         val activeLocalNames = localTools.map { it.spec.name }.toSet()
+        val overlappingMcpNames = activeLocalNames
+            .flatMap { OVERLAP_MAPPING[it].orEmpty() }
+            .toSet()
         var disabledCount = 0
-        for (localName in activeLocalNames) {
-            val overlappingMcpNames = OVERLAP_MAPPING[localName] ?: continue
-            for (mcpName in overlappingMcpNames) {
+        for (mcpName in overlappingMcpNames) {
+            val registered = mcpTools.filter { it.spec.name == mcpName }
+            if (registered.isEmpty()) {
                 autoDisabled.add(ToolKey(mcpName, ToolSource.MCP))
                 disabledCount++
+            } else {
+                for (tool in registered) {
+                    autoDisabled.add(ToolKey(mcpName, ToolSource.MCP, tool.serverLabel))
+                    disabledCount++
+                }
             }
         }
         if (disabledCount > 0) {
