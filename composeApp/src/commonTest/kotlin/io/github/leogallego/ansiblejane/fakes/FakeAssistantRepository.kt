@@ -36,6 +36,10 @@ class FakeAssistantRepository : IAssistantRepository {
     private val _activeProviderKeyFlow = MutableStateFlow<String?>(null)
     override val activeProviderKeyFlow: Flow<String?> = _activeProviderKeyFlow
 
+    private val modelContextTokens = mutableMapOf<String, Int>()
+    private val _modelContextTokensFlow = MutableStateFlow<Map<String, Int>>(emptyMap())
+    override val modelContextTokensFlow: Flow<Map<String, Int>> = _modelContextTokensFlow
+
     override fun addMessage(message: ChatMessage) {
         messages.add(message)
         message.tokenUsage?.let { usage ->
@@ -90,6 +94,13 @@ class FakeAssistantRepository : IAssistantRepository {
         activeProvider = providerKey
         _activeProviderKeyFlow.value = providerKey
         _activeConfigFlow.value = allConfigs[providerKey]
+    }
+
+    override suspend fun getModelContextTokens(modelId: String): Int? = modelContextTokens[modelId]
+
+    override suspend fun setModelContextTokens(modelId: String, contextTokens: Int) {
+        modelContextTokens[modelId] = contextTokens
+        _modelContextTokensFlow.value = modelContextTokens.toMap()
     }
 
     override suspend fun getDisabledTools(): Set<String> = savedDisabledTools

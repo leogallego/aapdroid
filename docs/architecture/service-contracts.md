@@ -127,7 +127,7 @@ the §2 same-package guideline so presentation never imports `network`.
   (`shared/.../tools/ToolStub.kt`) — a direct subtype of `Tool` in the same package,
   satisfying the sealed constraint while keeping test support out of production paths.
 
-### On-device LLM (#264)
+### On-device LLM (#264 / #470)
 
 - On-device inference is an `LlmProvider` implementation (`LocalLlmProvider` via
   `LocalLlmProviderFactory`), not a parallel engine path. ChatEngine continues to own
@@ -137,6 +137,13 @@ the §2 same-package guideline so presentation never imports `network`.
 - LiteRT types stay in `androidMain` / `jvmMain` actuals. `commonMain` / `commonTest`
   must not import LiteRT APIs — use bridge types (`BridgedAssistantMessage`, etc.) and
   repository interfaces for tests.
+- **Context window (#470):** Users may raise context from catalog `defaultContextTokens`
+  to `maxContextTokens` in 1K steps (Kai-style). The per-model map in
+  `IAssistantRepository` is the Settings slider source of truth;
+  `LlmProviderConfig.OnDevice.contextTokens` is the engine/ChatEngine authority
+  (`0` = catalog default). LiteRT receives `EngineConfig.maxNumTokens`; ChatEngine
+  budget uses the same resolved value. Pixel-class guidance: 4K default; 8K–16K OK
+  on ≥12 GB RAM; 32K may be tight or slower.
 
 ---
 

@@ -46,6 +46,30 @@ class AssistantCapabilityTest {
     }
 
     @Test
+    fun `OnDevice uses selection when contextTokens set`() {
+        val chars = resolveContextCharsForConfig(
+            LlmProviderConfig.OnDevice(modelId = "gemma-4-e4b-it", contextTokens = 16_384),
+        )
+        assertEquals(16_384, chars)
+    }
+
+    @Test
+    fun `OnDevice zero contextTokens means catalog default`() {
+        val chars = resolveContextCharsForConfig(
+            LlmProviderConfig.OnDevice(modelId = "gemma-4-e4b-it", contextTokens = 0),
+        )
+        assertEquals(4_096, chars)
+    }
+
+    @Test
+    fun `OnDevice clamps contextTokens above catalog max`() {
+        val chars = resolveContextCharsForConfig(
+            LlmProviderConfig.OnDevice(modelId = "gemma-4-e4b-it", contextTokens = 99_999),
+        )
+        assertEquals(32_768, chars)
+    }
+
+    @Test
     fun `small Ollama OpenAiCompatible config resolves to Simple`() {
         val capability = resolveCapabilityForConfig(
             LlmProviderConfig.OpenAiCompatible(

@@ -21,6 +21,8 @@ data class LocalModelUi(
     val fileName: String,
     val sizeBytes: Long,
     val isRecommended: Boolean,
+    val defaultContextTokens: Int,
+    val maxContextTokens: Int,
 )
 
 enum class DevicePerformanceUi {
@@ -53,6 +55,8 @@ fun LocalModel.toUi(): LocalModelUi = LocalModelUi(
     fileName = fileName,
     sizeBytes = sizeBytes,
     isRecommended = isRecommended,
+    defaultContextTokens = defaultContextTokens,
+    maxContextTokens = maxContextTokens,
 )
 
 fun DevicePerformance.toUi(): DevicePerformanceUi = when (this) {

@@ -177,7 +177,7 @@ data class OnDevice(
 - **PR1:** `resolve(..., onDevice = true)` → always `Simple` for every on-device model (including 12B if downloaded). Matches #453 today.  
 - **PR2 must extend #453** — see [12B policy vs Simple](#12b-policy-vs-453-simple). Until that lands, 12B must not claim MCP / TOKEN_SAVER behavior.  
 - Device tier UI: show GOOD/OK/POOR; **block download only on insufficient disk**; POOR is a warning  
-- **Context budget:** when active provider is OnDevice, set ChatEngine `contextChars = catalog.defaultContextTokens` (Jane’s existing char budgets are already token-shaped: 4K/8K/16K). E4B → 4096, 12B → 8192. Do not leave cloud TOOLS_ONLY’s 4K budget as the only knob once LARGE is active in PR2.
+- **Context budget:** when active provider is OnDevice, set ChatEngine `contextChars` from the user-selected on-device context (#470), falling back to catalog `defaultContextTokens` when unset (E4B → 4096, 12B → 8192). Settings exposes a Kai-style slider (`defaultContextTokens`…`maxContextTokens`, 1K steps); LiteRT `EngineConfig.maxNumTokens` uses the same selection. Do not leave cloud TOOLS_ONLY’s 4K budget as the only knob once LARGE is active in PR2.
 
 ## PR1 — Inference bridge (sync / manual)
 
@@ -387,7 +387,7 @@ Fakes must implement `ILocalModelRepository`. No LiteRT types in `commonMain` te
 | PR1 vs #453 `onDevice → Simple` | **Solved** — intentional; E4B and 12B both Simple until PR2 |
 | PR2 12B vs Simple no-MCP / TOOLS_ONLY | **Solved in design** — `OnDeviceLarge` + ToolRouter/VM/resolver touch list (not enum-only) |
 | Fake-as-`Full` anti-pattern | Explicitly forbidden |
-| Residual ambiguity | Locked `contextChars = defaultContextTokens`; no open OR left on that point |
+| Residual ambiguity | Unlocked by #470 — user-selectable context (defaults remain catalog defaults) |
 | Remaining risks (not conflicts) | LiteRT schema-only spike; pinned HF URLs/SHAs at implement time; async tool-event wiring |
 
 **Verdict:** Conflict solved. Spec ready for implementation planning.
