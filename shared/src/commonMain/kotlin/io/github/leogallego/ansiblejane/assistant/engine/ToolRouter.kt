@@ -615,10 +615,7 @@ class ToolRouter(
                 if (!isToolEnabled(tool.spec.name, ToolSource.MCP, tool.serverLabel)) continue
                 if (!passesRoleFilter(tool, aapRole)) continue
 
-                // #335: allowlist reads — unknown verbs blocked on readOnly servers
-                val passesReadOnly = tool.serverLabel !in readOnlyLabels ||
-                    READ_ACTIONS.any { action -> tool.spec.name.endsWith(action) }
-                if (!passesReadOnly) continue
+                if (!passesMcpReadOnlyFilter(tool, readOnlyLabels)) continue
 
                 val toolToolset = tool.toolset
                 val toolsetCategories = toolToolset?.let { TOOLSET_CATEGORY_MAP[it] }
@@ -841,11 +838,18 @@ class ToolRouter(
         val enabledMcp = mcpTools.filter { tool ->
             isToolEnabled(tool.spec.name, ToolSource.MCP, tool.serverLabel) &&
                 passesRoleFilter(tool, aapRole) &&
-                // #335: allowlist reads — unknown verbs blocked on readOnly servers
-                (tool.serverLabel !in readOnlyLabels ||
-                    READ_ACTIONS.any { action -> tool.spec.name.endsWith(action) })
+                passesMcpReadOnlyFilter(tool, readOnlyLabels)
         }
         return enabledLocal + enabledMcp
+    }
+
+    /**
+     * #335: MCP `readOnly` servers expose only [READ_ACTIONS] suffixes.
+     * Unknown verbs are blocked by default. Non-readOnly labels always pass.
+     */
+    private fun passesMcpReadOnlyFilter(tool: Tool, readOnlyLabels: Set<String>): Boolean {
+        if (tool.serverLabel !in readOnlyLabels) return true
+        return READ_ACTIONS.any { action -> tool.spec.name.endsWith(action) }
     }
 
     /**
@@ -910,14 +914,20 @@ class ToolRouter(
     }
 
     /**
-     * Like [getAllRegisteredTools] but applies a role filter so
-     * [ListToolsLocalTool] does not disclose write tools to auditors.
+     * Like [getAllRegisteredTools] but applies role + MCP read-only filters so
+     * [ListToolsLocalTool] does not disclose write tools to auditors or from
+     * `readOnly` MCP servers (#335).
      *
      * Prefer an explicit [aapRole] from the active instance; falls back to the
      * last [getToolsForQuery] context. Unknown/`null` fail-closes like auditor.
+     * Read-only labels come from the last routing [McpServerConfig] list.
      */
     fun getRoutableTools(aapRole: AapRole? = null): List<Pair<Tool, ToolSource>> = synchronized(this) {
         val role = aapRole ?: lastRoutingContext.aapRole
+        val readOnlyLabels = lastRoutingContext.serverConfigs
+            .filter { it.readOnly }
+            .map { it.label }
+            .toSet()
         val result = mutableListOf<Pair<Tool, ToolSource>>()
         localTools.forEach { tool ->
             if (isToolEnabled(tool.spec.name, ToolSource.LOCAL) && passesRoleFilter(tool, role)) {
@@ -926,7 +936,8 @@ class ToolRouter(
         }
         mcpTools.forEach { tool ->
             if (isToolEnabled(tool.spec.name, ToolSource.MCP, tool.serverLabel) &&
-                passesRoleFilter(tool, role)
+                passesRoleFilter(tool, role) &&
+                passesMcpReadOnlyFilter(tool, readOnlyLabels)
             ) {
                 result.add(tool to ToolSource.MCP)
             }

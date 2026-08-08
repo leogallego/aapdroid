@@ -425,6 +425,46 @@ class ToolRouterTest {
     }
 
     @Test
+    fun `searchAvailableTools SHOULD apply read-only allowlist`() {
+        router.registerMcpTools(
+            listOf(
+                mcpTool("hosts_list", toolset = "inventory_management"),
+                mcpTool("hosts_retrieve", toolset = "inventory_management"),
+                mcpTool("hosts_restart", toolset = "inventory_management"),
+                mcpTool("hosts_mystery", toolset = "inventory_management"),
+            )
+        )
+        val hits = router.searchAvailableTools(
+            "hosts list retrieve restart mystery",
+            serverConfigs = listOf(readOnlyConfig),
+            aapRole = AapRole.OPERATOR,
+        ).map { it.spec.name }
+
+        assertTrue("hosts_list" in hits)
+        assertTrue("hosts_retrieve" in hits)
+        assertFalse("hosts_restart" in hits)
+        assertFalse("hosts_mystery" in hits)
+    }
+
+    @Test
+    fun `getRoutableTools SHOULD apply read-only allowlist from last routing context`() {
+        router.registerMcpTools(
+            listOf(
+                mcpTool("hosts_list", toolset = "inventory_management"),
+                mcpTool("hosts_restart", toolset = "inventory_management"),
+                mcpTool("hosts_create", toolset = "inventory_management"),
+            )
+        )
+        // Seed lastRoutingContext with readOnly config (list_tools / getRoutableTools path)
+        router.getToolsForQuery("list my hosts", listOf(readOnlyConfig), aapRole = AapRole.OPERATOR)
+
+        val names = router.getRoutableTools(AapRole.OPERATOR).map { it.first.spec.name }
+        assertTrue("hosts_list" in names)
+        assertFalse("hosts_restart" in names)
+        assertFalse("hosts_create" in names)
+    }
+
+    @Test
     fun `SHOULD select MCP inventory tools WHEN query mentions hosts`() {
         val tools = listOf(
             mcpTool("hosts_list", toolset = "inventory_management"),
@@ -1649,6 +1689,34 @@ class ToolRouterTest {
 
         assertFalse(router.isAutoDisabled("users_list", ToolSource.MCP, "aap"))
         assertTrue(router.isToolEnabled("users_list", ToolSource.MCP, "aap"))
+    }
+
+    @Test
+    fun `unlabeled auto-disable SHOULD apply to all serverLabels before MCP registration`() {
+        router.registerLocalTools(listOf(localTool("list_hosts")))
+        // No MCP tools yet → unlabeled ToolKey(name, MCP)
+
+        assertTrue(router.isAutoDisabled("hosts_list", ToolSource.MCP))
+        assertTrue(router.isAutoDisabled("hosts_list", ToolSource.MCP, "aap"))
+        assertTrue(router.isAutoDisabled("hosts_list", ToolSource.MCP, "custom"))
+        assertFalse(router.isToolEnabled("hosts_list", ToolSource.MCP, "aap"))
+    }
+
+    @Test
+    fun `null serverLabel isAutoDisabled query SHOULD mean any registered server`() {
+        router.registerLocalTools(listOf(localTool("list_users")))
+        router.registerMcpTools(
+            listOf(
+                mcpTool("users_list", "aap"),
+                mcpTool("users_list", "eda"),
+            )
+        )
+
+        // Aggregate check (label omitted): name is auto-disabled somewhere
+        assertTrue(router.isAutoDisabled("users_list", ToolSource.MCP))
+        // Per-label still scoped — unrelated label without a registered users_list is not disabled
+        assertFalse(router.isAutoDisabled("users_list", ToolSource.MCP, "custom"))
+        assertTrue(router.isToolEnabled("users_list", ToolSource.MCP, "custom"))
     }
 
     @Test
