@@ -14,6 +14,13 @@ interface ILocalModelRepository {
     fun hasAvx2Support(): Boolean
 }
 
+enum class LocalModelDownloadErrorKind {
+    DISK,
+    NETWORK,
+    HASH,
+    OTHER,
+}
+
 /** Transient download machine. After success or idle, use [ILocalModelRepository.isReady]. */
 sealed interface LocalModelDownloadState {
     data object Idle : LocalModelDownloadState
@@ -23,5 +30,8 @@ sealed interface LocalModelDownloadState {
         val totalBytes: Long,
     ) : LocalModelDownloadState
     data class Succeeded(val modelId: String) : LocalModelDownloadState
-    data class Error(val modelId: String, val message: String) : LocalModelDownloadState
+    data class Error(
+        val modelId: String,
+        val kind: LocalModelDownloadErrorKind,
+    ) : LocalModelDownloadState
 }

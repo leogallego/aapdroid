@@ -76,6 +76,7 @@ class LocalModelRepositoryTest {
         val state = repo.downloadState.value
         assertIs<LocalModelDownloadState.Error>(state)
         assertEquals(model.id, state.modelId)
+        assertEquals(LocalModelDownloadErrorKind.HASH, state.kind)
         assertFalse(repo.isReady(model.id))
         assertNull(repo.modelPath(model.id))
         val expectedPath = LocalModelFiles.join(root, model.id, model.fileName)
@@ -143,7 +144,7 @@ class LocalModelRepositoryTest {
 
         val state = repo.downloadState.value
         assertIs<LocalModelDownloadState.Error>(state)
-        assertTrue(state.message.contains("disk", ignoreCase = true))
+        assertEquals(LocalModelDownloadErrorKind.DISK, state.kind)
         assertFalse(repo.isReady(model.id))
     }
 

@@ -46,7 +46,7 @@ class LocalModelRepository(
         val model = catalog.find { it.id == modelId }
         if (model == null) {
             _downloadState.value =
-                LocalModelDownloadState.Error(modelId, "Unknown model: $modelId")
+                LocalModelDownloadState.Error(modelId, LocalModelDownloadErrorKind.OTHER)
             return
         }
 
@@ -58,9 +58,7 @@ class LocalModelRepository(
         if (freeBytes < requiredBytes) {
             _downloadState.value = LocalModelDownloadState.Error(
                 modelId,
-                "Insufficient disk space: need $requiredBytes bytes " +
-                    "(model + ${DISK_BUFFER_BYTES / (1024 * 1024)} MB buffer), " +
-                    "have $freeBytes bytes free",
+                LocalModelDownloadErrorKind.DISK,
             )
             return
         }
@@ -155,7 +153,7 @@ class LocalModelRepository(
                 LocalModelFiles.deleteRecursively(tempPath)
                 _downloadState.value = LocalModelDownloadState.Error(
                     model.id,
-                    "SHA-256 mismatch: expected ${model.sha256}, got $actualSha",
+                    LocalModelDownloadErrorKind.HASH,
                 )
                 return
             }
@@ -170,10 +168,14 @@ class LocalModelRepository(
             throw e
         } catch (e: Exception) {
             LocalModelFiles.deleteRecursively(tempPath)
-            _downloadState.value = LocalModelDownloadState.Error(
-                model.id,
-                e.message ?: "Download failed",
-            )
+            val kind = if (e is IllegalStateException &&
+                e.message?.startsWith("Download failed with HTTP") == true
+            ) {
+                LocalModelDownloadErrorKind.NETWORK
+            } else {
+                LocalModelDownloadErrorKind.OTHER
+            }
+            _downloadState.value = LocalModelDownloadState.Error(model.id, kind)
         }
     }
 

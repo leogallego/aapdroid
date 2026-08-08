@@ -72,6 +72,7 @@ import io.github.leogallego.ansiblejane.assistant.data.LlmProviderConfig
 import io.github.leogallego.ansiblejane.assistant.data.TokenSavingMode
 import io.github.leogallego.ansiblejane.assistant.local.DevicePerformance
 import io.github.leogallego.ansiblejane.assistant.local.LocalModel
+import io.github.leogallego.ansiblejane.assistant.local.LocalModelDownloadErrorKind
 import io.github.leogallego.ansiblejane.assistant.local.LocalModelDownloadState
 import io.github.leogallego.ansiblejane.assistant.presentation.ModelFetchState
 
@@ -483,10 +484,11 @@ private fun LocalModelRow(
         }
 
         if (errorForThis != null) {
-            val message = if (errorForThis.message.contains("Insufficient disk", ignoreCase = true)) {
-                stringResource(Res.string.agent_local_disk_insufficient)
-            } else {
-                errorForThis.message
+            val message = when (errorForThis.kind) {
+                LocalModelDownloadErrorKind.DISK ->
+                    stringResource(Res.string.agent_local_disk_insufficient)
+                else ->
+                    stringResource(Res.string.agent_local_download_failed)
             }
             Text(
                 text = message,

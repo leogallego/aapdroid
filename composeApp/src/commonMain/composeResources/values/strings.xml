@@ -359,6 +359,7 @@
     <string name="agent_local_performance_poor">May be slow on this device</string>
     <string name="agent_local_avx_unsupported">On-device models require a CPU with AVX2 support. This desktop does not meet that requirement.</string>
     <string name="agent_local_disk_insufficient">Not enough free disk space to download this model.</string>
+    <string name="agent_local_download_failed">Download failed. Try again.</string>
     <string name="agent_local_loading_model">Loading model…</string>
     <string name="agent_local_download_progress">Downloading… %1$d%%</string>
     <string name="agent_local_size_gb">%1$.1f GB</string>
