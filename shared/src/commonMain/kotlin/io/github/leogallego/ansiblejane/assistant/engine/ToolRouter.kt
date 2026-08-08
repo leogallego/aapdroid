@@ -742,19 +742,19 @@ class ToolRouter(
      * Search all enabled tools by name + description tokens (meta-search / #120).
      * Stable: score desc, then name asc.
      *
-     * When [serverConfigs] is empty and [aapRole] is null, reuses the last
-     * [getToolsForQuery] routing context so auditor / read-only filters apply
-     * to LLM-invoked meta-search.
+     * [serverConfigs]: `null` = reuse last [getToolsForQuery] context;
+     * non-null (including empty) = use that list (do not fall back).
+     * [aapRole] `null` falls back to last routing role (auditor fail-closed when unknown).
      */
     fun searchAvailableTools(
         query: String,
         maxResults: Int = 20,
-        serverConfigs: List<McpServerConfig> = emptyList(),
+        serverConfigs: List<McpServerConfig>? = null,
         aapRole: AapRole? = null
     ): List<Tool> = synchronized(this) {
         val stemmedQuery = stemQueryTokens(tokenizeQuery(query))
         if (stemmedQuery.isEmpty()) return emptyList()
-        val effectiveConfigs = serverConfigs.ifEmpty { lastRoutingContext.serverConfigs }
+        val effectiveConfigs = serverConfigs ?: lastRoutingContext.serverConfigs
         val effectiveRole = aapRole ?: lastRoutingContext.aapRole
         val candidates = collectEnabledTools(effectiveConfigs, effectiveRole)
         return cherryPick(candidates, stemmedQuery, requireOverlap = true).take(maxResults.coerceAtLeast(0))
@@ -918,13 +918,18 @@ class ToolRouter(
      * [ListToolsLocalTool] does not disclose write tools to auditors or from
      * `readOnly` MCP servers (#335).
      *
-     * Prefer an explicit [aapRole] from the active instance; falls back to the
-     * last [getToolsForQuery] context. Unknown/`null` fail-closes like auditor.
-     * Read-only labels come from the last routing [McpServerConfig] list.
+     * Prefer an explicit [aapRole] / [serverConfigs] from the active instance;
+     * `null` falls back to the last [getToolsForQuery] context.
+     * Unknown/`null` role fail-closes like auditor.
+     * Non-null [serverConfigs] (including empty) is used as-is — no stale fallback.
      */
-    fun getRoutableTools(aapRole: AapRole? = null): List<Pair<Tool, ToolSource>> = synchronized(this) {
+    fun getRoutableTools(
+        aapRole: AapRole? = null,
+        serverConfigs: List<McpServerConfig>? = null,
+    ): List<Pair<Tool, ToolSource>> = synchronized(this) {
         val role = aapRole ?: lastRoutingContext.aapRole
-        val readOnlyLabels = lastRoutingContext.serverConfigs
+        val configs = serverConfigs ?: lastRoutingContext.serverConfigs
+        val readOnlyLabels = configs
             .filter { it.readOnly }
             .map { it.label }
             .toSet()

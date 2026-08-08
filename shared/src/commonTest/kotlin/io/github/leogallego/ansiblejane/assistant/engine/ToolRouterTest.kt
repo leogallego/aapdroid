@@ -465,6 +465,68 @@ class ToolRouterTest {
     }
 
     @Test
+    fun `getRoutableTools SHOULD apply explicit readOnly configs without prior routing`() {
+        // Cold list_tools path: DI passes activeInstance.mcpServerUrls with no getToolsForQuery yet
+        router.registerMcpTools(
+            listOf(
+                mcpTool("hosts_list", toolset = "inventory_management"),
+                mcpTool("hosts_restart", toolset = "inventory_management"),
+                mcpTool("hosts_create", toolset = "inventory_management"),
+            )
+        )
+
+        val names = router.getRoutableTools(
+            aapRole = AapRole.OPERATOR,
+            serverConfigs = listOf(readOnlyConfig),
+        ).map { it.first.spec.name }
+
+        assertTrue("hosts_list" in names)
+        assertFalse("hosts_restart" in names)
+        assertFalse("hosts_create" in names)
+    }
+
+    @Test
+    fun `getRoutableTools empty serverConfigs SHOULD not fall back to stale routing context`() {
+        router.registerMcpTools(
+            listOf(
+                mcpTool("hosts_list", toolset = "inventory_management"),
+                mcpTool("hosts_restart", toolset = "inventory_management"),
+            )
+        )
+        // Stale context: previous session had readOnly
+        router.getToolsForQuery("list my hosts", listOf(readOnlyConfig), aapRole = AapRole.OPERATOR)
+
+        // Explicit empty = no MCP configs (do not reuse stale readOnly labels)
+        val names = router.getRoutableTools(
+            aapRole = AapRole.OPERATOR,
+            serverConfigs = emptyList(),
+        ).map { it.first.spec.name }
+
+        assertTrue("hosts_list" in names)
+        assertTrue("hosts_restart" in names)
+    }
+
+    @Test
+    fun `searchAvailableTools empty serverConfigs SHOULD not fall back to stale routing context`() {
+        router.registerMcpTools(
+            listOf(
+                mcpTool("hosts_list", toolset = "inventory_management"),
+                mcpTool("hosts_restart", toolset = "inventory_management"),
+            )
+        )
+        router.getToolsForQuery("list my hosts", listOf(readOnlyConfig), aapRole = AapRole.OPERATOR)
+
+        val hits = router.searchAvailableTools(
+            "hosts list restart",
+            serverConfigs = emptyList(),
+            aapRole = AapRole.OPERATOR,
+        ).map { it.spec.name }
+
+        assertTrue("hosts_list" in hits)
+        assertTrue("hosts_restart" in hits)
+    }
+
+    @Test
     fun `SHOULD select MCP inventory tools WHEN query mentions hosts`() {
         val tools = listOf(
             mcpTool("hosts_list", toolset = "inventory_management"),
