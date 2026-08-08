@@ -87,7 +87,7 @@ Formal contracts are documented in `docs/architecture/service-contracts.md`. Key
 - **State exposure**: ViewModels expose `StateFlow<XxxUiState>`, never `MutableStateFlow`. UiState uses sealed classes with `Idle`/`Loading`/`Success`/`Error`.
 - **Tool contracts**: Local tools implement the `LocalTool` interface. MCP tools are instances of the `McpTool` class. Both satisfy the `Tool` interface.
 
-When reviewing PRs, load the `skills/pr-architecture-review/SKILL.md` skill to check changes against these contracts. It auto-loads relevant Kotlin/Android skills based on which files changed.
+When reviewing PRs, load the `.agents/skills/pr-architecture-review/SKILL.md` skill to check changes against these contracts. It auto-loads relevant Kotlin/Android skills based on which files changed.
 
 ## AI Assistant Architecture
 
@@ -128,9 +128,9 @@ Category-based query routing that selects relevant tools per user message:
 
 ## AI Agent Skills
 
-The `skills/` directory contains SKILL.md reference files for Android/Kotlin development. Read the relevant skill file before writing or reviewing code in that area. The full inventory with when-to-use guidance is in `docs/reference/skills-reference.md`.
+Project skills live in `.agents/skills/` (SKILL.md files for Android/Kotlin development). Read the relevant skill before writing or reviewing code in that area. Agent discovery notes are in `AGENTS.md`. Full inventory and when-to-use guidance: `docs/reference/skills-reference.md`.
 
-Quick lookup:
+Quick lookup (under `.agents/skills/`):
 - **Compose UI/state/layout** — `compose-skill/`, `compose-state-*`, `compose-modifier-and-layout-style/`
 - **Compose performance** — `compose-recomposition-performance/`, `compose-stability-diagnostics/`, `compose-state-deferred-reads/`
 - **Compose animations** — `compose-animations/`
@@ -141,8 +141,9 @@ Quick lookup:
 - **KMP** — `kotlin-multiplatform-expect-actual/`, `kotlin-types-value-class/`
 - **Navigation** — `android-official/navigation-3.md`, `android-official/edge-to-edge.md`
 - **Gradle** — `android-community/gradle-configuration.md`
+- **Post-PR review → merge** — `post-pr-review-merge/`
 
-See `skills/README.md` for sources and licenses.
+See `.agents/skills/README.md` for sources and licenses.
 
 ## Development Rules
 

@@ -10,9 +10,9 @@ There are three tiers of skills, each loaded differently:
 |------|----------|-------------|-------------|
 | **Plugins** | Installed via Claude Code plugin system | Automatic — always available as invocable skills | Session start |
 | **User skills** | `~/.claude/skills/` | `Skill: <name>` (invocable via Skill tool) | On demand |
-| **Project skills** | `skills/` in repo | `Read` the SKILL.md file directly | On demand, before relevant work |
+| **Project skills** | `.agents/skills/` in repo | `Read` the SKILL.md file directly (Cursor also auto-discovers this path) | On demand, before relevant work |
 
-**Key distinction:** Plugin and user skills are invocable via the `Skill` tool. Project skills are reference files — read them with the `Read` tool before doing related work.
+**Key distinction:** Plugin and user skills are invocable via the `Skill` tool. Project skills are reference files — read them with the `Read` tool before doing related work. Prefer `.agents/skills/...` paths; do not cite the root `skills/` compat symlink in new docs.
 
 ## Loading Protocol
 
@@ -20,11 +20,11 @@ There are three tiers of skills, each loaded differently:
 1. Load `android-cli` skill (invocable, user-level) — required for any device interaction
 
 ### Before implementation work
-1. Read relevant project skills from `skills/` (see lookup table below)
+1. Read relevant project skills from `.agents/skills/` (see lookup table below)
 2. Plugin skills (superpowers, code-review, etc.) are already available
 
 ### Before code review
-1. Read `skills/kotlin-kmp-code-review/SKILL.md` for KMP review checklist
+1. Read `.agents/skills/kotlin-kmp-code-review/SKILL.md` for KMP review checklist
 2. Read domain-specific skills for the area under review (Compose, coroutines, etc.)
 
 ### Adding new skills
@@ -67,11 +67,13 @@ Installed globally, available in all projects. Invoke via `Skill: <name>`.
 | `testing-setup` | [android/skills](https://github.com/android/skills) | Create testing strategy for native Android apps |
 | `verified-email` | [android/skills](https://github.com/android/skills) | Implement verified email retrieval with Credential Manager |
 
-## Project Skills (skills/)
+## Project Skills (`.agents/skills/`)
 
-Bundled with this repo. Read with `Read` tool before relevant work.
+Bundled with this repo under `.agents/skills/`. Read with `Read` tool before relevant work. See also `AGENTS.md`.
 
 ### Quick Lookup by Task
+
+Paths below are relative to `.agents/skills/`.
 
 | Task | Skills to read |
 |------|---------------|
@@ -92,6 +94,7 @@ Bundled with this repo. Read with `Read` tool before relevant work.
 | **Gradle config** | `android-community/gradle-configuration.md` |
 | **Architecture review** | `kotlin-project-architecture-review/` |
 | **PR contract review** | `pr-architecture-review/` (project-specific, checks `docs/architecture/service-contracts.md`) |
+| **Post-PR review → merge** | `post-pr-review-merge/` (architecture + Kotlin review, fix loop, merge when CI green) |
 | **Feature implementation** | `kotlin-project-feature-implementation/` |
 | **Bug fixing** | `kotlin-project-bugfix/` |
 

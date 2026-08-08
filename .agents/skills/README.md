@@ -3,6 +3,8 @@
 SKILL.md files that ground AI assistants with Android/Kotlin best practices.
 These follow the [agentskills.io](https://agentskills.io) open standard.
 
+**Canonical path:** `.agents/skills/` (this directory). See repo-root `AGENTS.md`.
+
 ## Sources
 
 ### `android-official/` - Google Android Skills
@@ -89,6 +91,10 @@ From [mmiani/kotlin-kmp-claude-agent-skills](https://github.com/mmiani/kotlin-km
 ### `pr-architecture-review/` - Project Architecture Contract Review
 Project-specific (Apache 2.0)
 - **pr-architecture-review** - PR review skill that checks changes against `docs/architecture/service-contracts.md`. Verifies layer discipline, interface contracts, module boundaries, state management, DI patterns. Auto-loads relevant Kotlin/Android skills based on changed files.
+
+### `post-pr-review-merge/` - Post-PR Review Fix Loop
+Project-specific (Apache 2.0)
+- **post-pr-review-merge** - After PR creation: architecture review + Kotlin code review, fix until clean (simple issues even if unrelated; complex unrelated → match/create follow-up issue), report deferred/info/warnings, merge when those need no action and CI is green.
 
 ### `kotlin-kmp-abstraction-decision/` - KMP Abstraction Decision Framework
 From [vitorpamplona/amethyst](https://github.com/vitorpamplona/amethyst) (MIT)
