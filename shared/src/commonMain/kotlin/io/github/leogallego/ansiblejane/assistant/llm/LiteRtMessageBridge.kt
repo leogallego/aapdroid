@@ -103,6 +103,30 @@ internal data class BridgedHistoryMessage(
 internal fun promptToBridgedHistory(prompt: Prompt): List<BridgedHistoryMessage> =
     prompt.messages.map { it.toBridgedHistoryMessage() }
 
+/** Result of [splitLastTurn]: everything to preload plus the final turn to submit. */
+internal data class BridgedHistorySplit(
+    val initialHistory: List<BridgedHistoryMessage>,
+    val lastMessage: BridgedHistoryMessage,
+)
+
+/**
+ * Splits [history] into the turns to preload as a LiteRT `Conversation`'s `initialMessages` and
+ * the single final turn to submit via `Conversation.sendMessage()`.
+ *
+ * This must **not** slice on the last USER message: after ChatEngine's first tool round, the
+ * history ends in `[..., Assistant(tool call), Tool(result)]` — re-sending the original user
+ * question (as `indexOfLast { role == USER }` did) silently drops the assistant tool-call and
+ * tool-result turns, so LiteRT re-answers the original question instead of continuing the tool
+ * loop (#264 Task 6). [lastMessage] is always the last entry in [history], regardless of role.
+ */
+internal fun splitLastTurn(history: List<BridgedHistoryMessage>): BridgedHistorySplit {
+    require(history.isNotEmpty()) { "History must contain at least one message" }
+    return BridgedHistorySplit(
+        initialHistory = history.subList(0, history.size - 1),
+        lastMessage = history.last(),
+    )
+}
+
 private fun Message.toBridgedHistoryMessage(): BridgedHistoryMessage = when (this) {
     is Message.System -> BridgedHistoryMessage(BridgedRole.SYSTEM, textContent())
     is Message.User -> {

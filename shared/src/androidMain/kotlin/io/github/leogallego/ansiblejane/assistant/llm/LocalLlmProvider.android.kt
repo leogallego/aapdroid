@@ -20,6 +20,7 @@ import com.google.ai.edge.litertlm.tool
 import io.github.leogallego.ansiblejane.assistant.data.LlmProviderConfig
 import io.github.leogallego.ansiblejane.assistant.local.ILocalModelRepository
 import java.io.File
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -74,20 +75,31 @@ class LocalLlmProvider internal constructor(
     ): Flow<StreamFrame> = flow {
         idleReleaseJob?.cancel()
         val history = promptToBridgedHistory(prompt)
-        val lastUserIndex = history.indexOfLast { it.role == BridgedRole.USER }
-        if (lastUserIndex < 0) {
-            throw LlmServerException("On-device provider requires at least one user message")
+        if (history.isEmpty()) {
+            throw LlmServerException("On-device provider requires at least one message")
         }
-        val userText = sanitizeForLiteRt(history[lastUserIndex].text).orEmpty()
+        val (initialHistory, lastMessage) = splitLastTurn(history)
 
         val conv = withContext(Dispatchers.IO) {
-            ensureConversation(history.subList(0, lastUserIndex), tools)
+            ensureConversation(initialHistory, tools, maxTokens)
         }
 
         val response = try {
             withTimeout(INFERENCE_TIMEOUT_MS) {
-                withContext(Dispatchers.IO) { conv.sendMessage(userText) }
+                withContext(Dispatchers.IO) {
+                    // ChatEngine's tool loop resumes with a TOOL-role last turn, not a fresh USER
+                    // question — sending the correct turn (not the original USER text) is what
+                    // keeps multi-round tool calling working (#264 Task 6).
+                    when (lastMessage.role) {
+                        BridgedRole.USER -> conv.sendMessage(sanitizeForLiteRt(lastMessage.text).orEmpty())
+                        else -> conv.sendMessage(lastMessage.toLiteRtMessage())
+                    }
+                }
             }
+        } catch (e: TimeoutCancellationException) {
+            throw LlmTimeoutException("On-device inference timed out")
+        } catch (e: CancellationException) {
+            throw e
         } catch (e: Throwable) {
             throw mapEngineException(e)
         } finally {
@@ -120,6 +132,7 @@ class LocalLlmProvider internal constructor(
     private suspend fun ensureConversation(
         priorHistory: List<BridgedHistoryMessage>,
         tools: List<ToolDescriptor>,
+        maxTokens: Int?,
     ): Conversation {
         val modelPath = modelRepository.modelPath(config.modelId)
             ?: throw LlmServerException("On-device model not downloaded: ${config.modelId}")
@@ -144,6 +157,7 @@ class LocalLlmProvider internal constructor(
             samplerConfig = SamplerConfig(topK = 40, topP = 0.95, temperature = 0.8),
             // PR1: ChatEngine owns the tool loop — see class doc "Spike" note.
             automaticToolCalling = false,
+            maxOutputToken = maxTokens,
         )
 
         val previous = conversation
@@ -175,15 +189,21 @@ class LocalLlmProvider internal constructor(
 
             val newEngine = try {
                 initWithBackend(Backend.GPU()).also {
-                    if (ExperimentalFlags.enableSpeculativeDecoding == null) {
-                        ExperimentalFlags.enableSpeculativeDecoding = true
-                    }
+                    // Only set once GPU init actually succeeds — never leave a stale `true`
+                    // stuck on a CPU-only engine from an earlier GPU init (#264 Task 6 Important #5).
+                    ExperimentalFlags.enableSpeculativeDecoding = true
                 }
+            } catch (e: CancellationException) {
+                throw e
             } catch (e: Exception) {
+                ExperimentalFlags.enableSpeculativeDecoding = false
                 initWithBackend(Backend.CPU())
             }
             engine = newEngine
             loadedModelId = config.modelId
+        } catch (e: CancellationException) {
+            _engineState.value = LocalEngineState.Error
+            throw e
         } catch (e: Exception) {
             _engineState.value = LocalEngineState.Error
             throw mapEngineException(e)
@@ -209,16 +229,19 @@ class LocalLlmProvider internal constructor(
         }
     }
 
-    private fun BridgedHistoryMessage.toLiteRtMessage(): LiteRtMessage = when (role) {
-        BridgedRole.SYSTEM -> LiteRtMessage.system(text)
-        BridgedRole.USER -> LiteRtMessage.user(text)
-        BridgedRole.TOOL -> LiteRtMessage.tool(Contents.of(text))
-        BridgedRole.ASSISTANT -> LiteRtMessage.model(
-            contents = Contents.of(text),
-            toolCalls = toolCalls.map {
-                LiteRtToolCall(name = it.name, arguments = jsonArgumentsToMap(it.argumentsJson))
-            },
-        )
+    private fun BridgedHistoryMessage.toLiteRtMessage(): LiteRtMessage {
+        val safeText = sanitizeForLiteRt(text).orEmpty()
+        return when (role) {
+            BridgedRole.SYSTEM -> LiteRtMessage.system(safeText)
+            BridgedRole.USER -> LiteRtMessage.user(safeText)
+            BridgedRole.TOOL -> LiteRtMessage.tool(Contents.of(safeText))
+            BridgedRole.ASSISTANT -> LiteRtMessage.model(
+                contents = Contents.of(safeText),
+                toolCalls = toolCalls.map {
+                    LiteRtToolCall(name = it.name, arguments = jsonArgumentsToMap(it.argumentsJson))
+                },
+            )
+        }
     }
 
     private fun mapEngineException(e: Throwable): Throwable = when (e) {

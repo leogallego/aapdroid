@@ -144,6 +144,60 @@ class LiteRtStreamFrameBridgeTest {
         assertEquals("[]", history[3].text)
     }
 
+    // --- splitLastTurn (#264 Task 6: tool-loop history must not be discarded) --------------
+
+    @Test
+    fun `splitLastTurn keeps assistant tool-call and prior turns, last is TOOL`() {
+        val prompt = Prompt(
+            messages = listOf(
+                Message.System(content = "You are Jane", metaInfo = RequestMetaInfo.Empty),
+                Message.User(content = "List failed jobs", metaInfo = RequestMetaInfo.Empty),
+                Message.Assistant(
+                    parts = listOf(MessagePart.Tool.Call(id = "call_1", tool = "list_jobs", args = """{"status":"failed"}""")),
+                    metaInfo = ResponseMetaInfo.Empty,
+                ),
+                Message.User(
+                    part = MessagePart.Tool.Result(id = "call_1", tool = "list_jobs", output = "[]"),
+                    metaInfo = RequestMetaInfo.Empty,
+                ),
+            ),
+            id = "test",
+        )
+        val history = promptToBridgedHistory(prompt)
+
+        val split = splitLastTurn(history)
+
+        assertEquals(3, split.initialHistory.size)
+        assertEquals(BridgedRole.SYSTEM, split.initialHistory[0].role)
+        assertEquals(BridgedRole.USER, split.initialHistory[1].role)
+        assertEquals(BridgedRole.ASSISTANT, split.initialHistory[2].role)
+        assertEquals(1, split.initialHistory[2].toolCalls.size)
+        assertEquals(BridgedRole.TOOL, split.lastMessage.role)
+        assertEquals("[]", split.lastMessage.text)
+    }
+
+    @Test
+    fun `splitLastTurn on a single user message returns empty initialHistory`() {
+        val history = listOf(BridgedHistoryMessage(BridgedRole.USER, "hello"))
+
+        val split = splitLastTurn(history)
+
+        assertTrue(split.initialHistory.isEmpty())
+        assertEquals(BridgedRole.USER, split.lastMessage.role)
+        assertEquals("hello", split.lastMessage.text)
+    }
+
+    @Test
+    fun `splitLastTurn throws on empty history`() {
+        var threw = false
+        try {
+            splitLastTurn(emptyList())
+        } catch (e: IllegalArgumentException) {
+            threw = true
+        }
+        assertTrue(threw)
+    }
+
     // --- tool call argument JSON round-trip -------------------------------------------------
 
     @Test
