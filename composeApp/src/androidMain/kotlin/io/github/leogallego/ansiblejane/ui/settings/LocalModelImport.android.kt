@@ -2,7 +2,6 @@ package io.github.leogallego.ansiblejane.ui.settings
 
 import android.content.Context
 import android.net.Uri
-import android.os.Environment
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.runtime.Composable
@@ -71,16 +70,6 @@ actual fun rememberLocalModelImportController(
                 state.job = null
             }
         }
-    }
-}
-
-actual fun findCatalogModelInDownloads(fileName: String): String? {
-    val downloads = Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS)
-    val candidate = File(downloads, fileName)
-    return if (candidate.isFile && candidate.canRead() && candidate.length() > 0L) {
-        candidate.absolutePath
-    } else {
-        null
     }
 }
 

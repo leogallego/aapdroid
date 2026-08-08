@@ -55,6 +55,20 @@ class LocalModelRepositoryTest {
         assertNotNull(repo.modelPath(model.id))
         assertTrue(LocalModelFiles.exists(checkNotNull(repo.modelPath(model.id))))
         assertIs<LocalModelDownloadState.Succeeded>(repo.downloadState.value)
+        // Ready models never advertise a Downloads candidate (#479).
+        assertNull(repo.findExistingImportCandidate(model.id))
+    }
+
+    @Test
+    fun findExistingImportCandidate_unknownModel_returnsNull() = runTest {
+        val model = testModel(sha256 = payloadSha256, sizeBytes = payload.size.toLong())
+        val repo = createRepo(
+            catalog = listOf(model),
+            modelRoot = newRoot(),
+            freeDiskBytes = model.sizeBytes + diskBufferBytes + 1,
+            responseBody = payload,
+        )
+        assertNull(repo.findExistingImportCandidate("does-not-exist"))
     }
 
     @Test

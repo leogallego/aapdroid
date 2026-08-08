@@ -23,6 +23,8 @@ data class LocalModelUi(
     val isRecommended: Boolean,
     val defaultContextTokens: Int,
     val maxContextTokens: Int,
+    /** Absolute path to a Downloads candidate for import, if the repository found one. */
+    val existingImportPath: String? = null,
 )
 
 enum class DevicePerformanceUi {
@@ -49,7 +51,7 @@ sealed interface LocalModelDownloadUiState {
     ) : LocalModelDownloadUiState
 }
 
-fun LocalModel.toUi(): LocalModelUi = LocalModelUi(
+fun LocalModel.toUi(existingImportPath: String? = null): LocalModelUi = LocalModelUi(
     id = id,
     displayName = displayName,
     fileName = fileName,
@@ -57,6 +59,7 @@ fun LocalModel.toUi(): LocalModelUi = LocalModelUi(
     isRecommended = isRecommended,
     defaultContextTokens = defaultContextTokens,
     maxContextTokens = maxContextTokens,
+    existingImportPath = existingImportPath,
 )
 
 fun DevicePerformance.toUi(): DevicePerformanceUi = when (this) {

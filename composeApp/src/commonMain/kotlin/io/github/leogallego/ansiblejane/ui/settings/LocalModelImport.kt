@@ -25,9 +25,3 @@ expect fun rememberLocalModelImportController(
     onPreparing: () -> Unit,
     onResult: (LocalModelImportPick) -> Unit,
 ): LocalModelImportController
-
-/**
- * Best-effort lookup of a catalog filename under the user Downloads folder.
- * Call from a background dispatcher — may touch the filesystem.
- */
-expect fun findCatalogModelInDownloads(fileName: String): String?

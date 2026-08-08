@@ -38,16 +38,6 @@ actual fun rememberLocalModelImportController(
     }
 }
 
-actual fun findCatalogModelInDownloads(fileName: String): String? {
-    val home = System.getProperty("user.home") ?: return null
-    val candidate = File(home, "Downloads${File.separator}$fileName")
-    return if (candidate.isFile && candidate.canRead() && candidate.length() > 0L) {
-        candidate.absolutePath
-    } else {
-        null
-    }
-}
-
 private suspend fun pickFileOnEdt(): LocalModelImportPick =
     withContext(Dispatchers.IO) {
         suspendCancellableCoroutine { cont ->

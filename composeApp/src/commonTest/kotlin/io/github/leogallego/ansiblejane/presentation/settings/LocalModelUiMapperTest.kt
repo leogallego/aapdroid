@@ -8,11 +8,13 @@ import aapremotecontrol.composeapp.generated.resources.agent_local_download_time
 import aapremotecontrol.composeapp.generated.resources.agent_local_hash_mismatch
 import aapremotecontrol.composeapp.generated.resources.agent_local_import_failed
 import io.github.leogallego.ansiblejane.assistant.local.DevicePerformance
+import io.github.leogallego.ansiblejane.assistant.local.LOCAL_MODEL_CATALOG
 import io.github.leogallego.ansiblejane.assistant.local.LocalModelDownloadErrorKind
 import io.github.leogallego.ansiblejane.assistant.local.LocalModelDownloadState
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertIs
+import kotlin.test.assertNull
 import kotlin.test.assertTrue
 
 class LocalModelUiMapperTest {
@@ -77,5 +79,15 @@ class LocalModelUiMapperTest {
         assertEquals("3.4", formatLocalModelSizeGb(3_659_530_240L))
         assertEquals("6.1", formatLocalModelSizeGb(6_547_589_312L))
         assertEquals("0.0", formatLocalModelSizeGb(0L))
+    }
+
+    @Test
+    fun `toUi carries optional existing import path`() {
+        val model = LOCAL_MODEL_CATALOG.first()
+        assertNull(model.toUi().existingImportPath)
+        assertEquals(
+            "/downloads/${model.fileName}",
+            model.toUi(existingImportPath = "/downloads/${model.fileName}").existingImportPath,
+        )
     }
 }

@@ -22,6 +22,7 @@ import io.github.leogallego.ansiblejane.assistant.tools.ToolSource
 import io.github.leogallego.ansiblejane.ui.components.DateFormatter
 import io.github.leogallego.ansiblejane.ui.components.TimeFormat
 import io.ktor.http.parseUrl
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -32,6 +33,7 @@ import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import kotlinx.serialization.json.Json
 import kotlinx.datetime.TimeZone
 
@@ -52,8 +54,6 @@ class SettingsViewModel(
     private val _uiState = MutableStateFlow<SettingsUiState>(SettingsUiState.Loading)
     val uiState: StateFlow<SettingsUiState> = _uiState.asStateFlow()
 
-    private val localModelCatalog: List<LocalModelUi> =
-        localModelRepository.catalog().map { it.toUi() }
     private val hasAvx2Support: Boolean = localModelRepository.hasAvx2Support()
 
     init {
@@ -110,8 +110,10 @@ class SettingsViewModel(
                     ?: localModelRepository.downloadState.value.toUi()
                 val preservedLocalReadyIds = (current as? SettingsUiState.Ready)?.localReadyIds
                     ?: computeLocalReadyIds()
+                // Avoid filesystem Downloads scan on the combine collector thread; refreshed
+                // asynchronously via refreshLocalReadyIds() (Dispatchers.Default).
                 val preservedLocalCatalog = (current as? SettingsUiState.Ready)?.localModelCatalog
-                    ?: localModelCatalog
+                    ?: localModelRepository.catalog().map { it.toUi() }
                 val preservedLocalContextTokens =
                     (current as? SettingsUiState.Ready)?.localModelContextTokens
                         ?: initialLocalContextTokens
@@ -210,6 +212,11 @@ class SettingsViewModel(
             assistantRepository.modelContextTokensFlow.collect { tokens ->
                 updateReady { copy(localModelContextTokens = tokens) }
             }
+        }
+
+        // Downloads discovery may touch the filesystem (#479) — keep off the main thread.
+        viewModelScope.launch {
+            refreshLocalReadyIds()
         }
     }
 
@@ -451,8 +458,27 @@ class SettingsViewModel(
             .filter { localModelRepository.isReady(it) }
             .toSet()
 
-    private fun refreshLocalReadyIds() {
-        updateReady { copy(localReadyIds = computeLocalReadyIds()) }
+    private fun buildLocalModelCatalog(readyIds: Set<String>): List<LocalModelUi> =
+        localModelRepository.catalog().map { model ->
+            val existing = if (model.id in readyIds) {
+                null
+            } else {
+                localModelRepository.findExistingImportCandidate(model.id)
+            }
+            model.toUi(existingImportPath = existing)
+        }
+
+    private suspend fun refreshLocalReadyIds() {
+        val (readyIds, catalogUi) = withContext(Dispatchers.Default) {
+            val ready = computeLocalReadyIds()
+            ready to buildLocalModelCatalog(ready)
+        }
+        updateReady {
+            copy(
+                localReadyIds = readyIds,
+                localModelCatalog = catalogUi,
+            )
+        }
     }
 
     // --- Tools (MCP) ---

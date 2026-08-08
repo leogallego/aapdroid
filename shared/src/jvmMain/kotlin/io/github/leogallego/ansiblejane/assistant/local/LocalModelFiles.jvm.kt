@@ -67,4 +67,14 @@ internal actual object LocalModelFiles {
         }
         return file.path
     }
+
+    actual fun findInUserDownloads(fileName: String): String? {
+        val home = System.getProperty("user.home") ?: return null
+        val candidate = File(home, "Downloads${File.separator}$fileName")
+        return if (candidate.isFile && candidate.canRead() && candidate.length() > 0L) {
+            candidate.absolutePath
+        } else {
+            null
+        }
+    }
 }

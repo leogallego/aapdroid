@@ -21,6 +21,12 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
 
+/**
+ * Default [ILocalModelRepository].
+ *
+ * [scope] must be process-scoped (see interface KDoc / #478). Transfers run on [scope] via
+ * exclusive jobs so cancel/resume survive Settings navigation; do not pass `viewModelScope`.
+ */
 class LocalModelRepository(
     private val deviceResources: IDeviceResources,
     private val httpClient: HttpClient,
@@ -143,6 +149,12 @@ class LocalModelRepository(
             totalBytes = 1L,
             isImport = true,
         )
+    }
+
+    override fun findExistingImportCandidate(modelId: String): String? {
+        val model = catalog.find { it.id == modelId } ?: return null
+        if (isReady(modelId)) return null
+        return LocalModelFiles.findInUserDownloads(model.fileName)
     }
 
     override fun devicePerformance(modelId: String, contextTokens: Int): DevicePerformance {
