@@ -70,11 +70,10 @@ import aapremotecontrol.composeapp.generated.resources.*
 import io.github.leogallego.ansiblejane.assistant.data.KnownProvider
 import io.github.leogallego.ansiblejane.assistant.data.LlmProviderConfig
 import io.github.leogallego.ansiblejane.assistant.data.TokenSavingMode
-import io.github.leogallego.ansiblejane.assistant.local.DevicePerformance
-import io.github.leogallego.ansiblejane.assistant.local.LocalModel
-import io.github.leogallego.ansiblejane.assistant.local.LocalModelDownloadErrorKind
-import io.github.leogallego.ansiblejane.assistant.local.LocalModelDownloadState
 import io.github.leogallego.ansiblejane.assistant.presentation.ModelFetchState
+import io.github.leogallego.ansiblejane.presentation.settings.DevicePerformanceUi
+import io.github.leogallego.ansiblejane.presentation.settings.LocalModelDownloadUiState
+import io.github.leogallego.ansiblejane.presentation.settings.LocalModelUi
 
 @Composable
 fun AgentTab(
@@ -87,11 +86,11 @@ fun AgentTab(
     onClearFetchedModels: () -> Unit,
     onSaveProviderConfig: (providerKey: String, LlmProviderConfig) -> Unit,
     onSwitchActiveProvider: (String) -> Unit,
-    localModelCatalog: List<LocalModel> = emptyList(),
-    localDownloadState: LocalModelDownloadState = LocalModelDownloadState.Idle,
+    localModelCatalog: List<LocalModelUi> = emptyList(),
+    localDownloadState: LocalModelDownloadUiState = LocalModelDownloadUiState.Idle,
     localReadyIds: Set<String> = emptySet(),
     hasAvx2Support: Boolean = true,
-    onLocalModelPerformance: (String) -> DevicePerformance = { DevicePerformance.POOR },
+    onLocalModelPerformance: (String) -> DevicePerformanceUi = { DevicePerformanceUi.POOR },
     onDownloadLocalModel: (String) -> Unit = {},
     onCancelLocalModelDownload: () -> Unit = {},
     onDeleteLocalModel: (String) -> Unit = {},
@@ -257,11 +256,11 @@ private fun LocalProviderCard(
     isActive: Boolean,
     isConfigured: Boolean,
     isExpanded: Boolean,
-    catalog: List<LocalModel>,
-    downloadState: LocalModelDownloadState,
+    catalog: List<LocalModelUi>,
+    downloadState: LocalModelDownloadUiState,
     readyIds: Set<String>,
     hasAvx2Support: Boolean,
-    onPerformance: (String) -> DevicePerformance,
+    onPerformance: (String) -> DevicePerformanceUi,
     onToggleExpand: () -> Unit,
     onDownload: (String) -> Unit,
     onCancelDownload: () -> Unit,
@@ -375,20 +374,20 @@ private fun LocalProviderCard(
 
 @Composable
 private fun LocalModelRow(
-    model: LocalModel,
+    model: LocalModelUi,
     isReady: Boolean,
     isSelected: Boolean,
-    downloadState: LocalModelDownloadState,
-    performance: DevicePerformance,
+    downloadState: LocalModelDownloadUiState,
+    performance: DevicePerformanceUi,
     actionsEnabled: Boolean,
     onDownload: () -> Unit,
     onCancelDownload: () -> Unit,
     onDelete: () -> Unit,
     onSelect: () -> Unit,
 ) {
-    val downloading = downloadState as? LocalModelDownloadState.Downloading
+    val downloading = downloadState as? LocalModelDownloadUiState.Downloading
     val isDownloadingThis = downloading?.modelId == model.id
-    val error = downloadState as? LocalModelDownloadState.Error
+    val error = downloadState as? LocalModelDownloadUiState.Error
     val errorForThis = error?.takeIf { it.modelId == model.id }
 
     Column(
@@ -435,18 +434,18 @@ private fun LocalModelRow(
                 )
                 Text(
                     text = when (performance) {
-                        DevicePerformance.GOOD ->
+                        DevicePerformanceUi.GOOD ->
                             stringResource(Res.string.agent_local_performance_good)
-                        DevicePerformance.OK ->
+                        DevicePerformanceUi.OK ->
                             stringResource(Res.string.agent_local_performance_ok)
-                        DevicePerformance.POOR ->
+                        DevicePerformanceUi.POOR ->
                             stringResource(Res.string.agent_local_performance_poor)
                     },
                     style = MaterialTheme.typography.bodySmall,
                     color = when (performance) {
-                        DevicePerformance.GOOD -> AnsibleJaneTheme.statusColors.successful
-                        DevicePerformance.OK -> MaterialTheme.colorScheme.tertiary
-                        DevicePerformance.POOR -> MaterialTheme.colorScheme.error
+                        DevicePerformanceUi.GOOD -> AnsibleJaneTheme.statusColors.successful
+                        DevicePerformanceUi.OK -> MaterialTheme.colorScheme.tertiary
+                        DevicePerformanceUi.POOR -> MaterialTheme.colorScheme.error
                     },
                     modifier = Modifier.testTag("text_local_performance_${model.id}")
                 )
@@ -484,14 +483,8 @@ private fun LocalModelRow(
         }
 
         if (errorForThis != null) {
-            val message = when (errorForThis.kind) {
-                LocalModelDownloadErrorKind.DISK ->
-                    stringResource(Res.string.agent_local_disk_insufficient)
-                else ->
-                    stringResource(Res.string.agent_local_download_failed)
-            }
             Text(
-                text = message,
+                text = stringResource(errorForThis.message),
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.error,
                 modifier = Modifier.testTag("text_local_error_${model.id}")
@@ -542,7 +535,7 @@ private fun LocalModelRow(
                     Button(
                         onClick = onDownload,
                         enabled = actionsEnabled &&
-                            downloadState !is LocalModelDownloadState.Downloading,
+                            downloadState !is LocalModelDownloadUiState.Downloading,
                         modifier = Modifier.testTag("button_local_download_${model.id}")
                     ) {
                         Text(stringResource(Res.string.agent_local_download))

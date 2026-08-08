@@ -25,6 +25,7 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.TimeoutCancellationException
+import kotlinx.coroutines.cancel
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -124,6 +125,7 @@ class LocalLlmProvider internal constructor(
     override fun close() {
         idleRelease.cancel()
         releaseEngine()
+        scope.cancel()
     }
 
     private suspend fun ensureConversation(

@@ -5,7 +5,7 @@ import io.github.leogallego.ansiblejane.assistant.data.KnownProvider
 import io.github.leogallego.ansiblejane.assistant.data.LlmProviderConfig
 import io.github.leogallego.ansiblejane.assistant.data.ModelFetcher
 import io.github.leogallego.ansiblejane.assistant.engine.ToolRouter
-import io.github.leogallego.ansiblejane.assistant.local.LocalModelDownloadState
+import io.github.leogallego.ansiblejane.presentation.settings.LocalModelDownloadUiState
 import io.github.leogallego.ansiblejane.assistant.tools.LocalTool
 import io.github.leogallego.ansiblejane.assistant.tools.ToolResult
 import io.github.leogallego.ansiblejane.assistant.tools.ToolSpec
@@ -457,7 +457,7 @@ class SettingsViewModelTest {
 
         assertEquals(listOf(modelId), fakeLocalModelRepo.downloadCalls)
         assertTrue(modelId in viewModel.localReadyIds.value)
-        assertIs<LocalModelDownloadState.Succeeded>(viewModel.localDownloadState.value)
+        assertIs<LocalModelDownloadUiState.Succeeded>(viewModel.localDownloadState.value)
     }
 
     @Test
@@ -467,7 +467,7 @@ class SettingsViewModelTest {
         viewModel.cancelLocalModelDownload()
 
         assertEquals(1, fakeLocalModelRepo.cancelCalls)
-        assertIs<LocalModelDownloadState.Idle>(viewModel.localDownloadState.value)
+        assertIs<LocalModelDownloadUiState.Idle>(viewModel.localDownloadState.value)
     }
 
     @Test

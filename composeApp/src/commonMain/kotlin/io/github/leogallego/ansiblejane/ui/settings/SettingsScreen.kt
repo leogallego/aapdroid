@@ -21,10 +21,10 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
-import io.github.leogallego.ansiblejane.assistant.local.DevicePerformance
-import io.github.leogallego.ansiblejane.assistant.local.LocalModel
-import io.github.leogallego.ansiblejane.assistant.local.LocalModelDownloadState
 import io.github.leogallego.ansiblejane.assistant.tools.ToolSource
+import io.github.leogallego.ansiblejane.presentation.settings.DevicePerformanceUi
+import io.github.leogallego.ansiblejane.presentation.settings.LocalModelDownloadUiState
+import io.github.leogallego.ansiblejane.presentation.settings.LocalModelUi
 import io.github.leogallego.ansiblejane.presentation.settings.SettingsTab
 import io.github.leogallego.ansiblejane.presentation.settings.SettingsUiState
 import io.github.leogallego.ansiblejane.presentation.settings.SettingsViewModel
@@ -134,11 +134,11 @@ private fun SettingsContent(
     onSwitchActiveProvider: (String) -> Unit,
     onFetchModels: (String, String?) -> Unit,
     onClearFetchedModels: () -> Unit,
-    localModelCatalog: List<LocalModel>,
-    localDownloadState: LocalModelDownloadState,
+    localModelCatalog: List<LocalModelUi>,
+    localDownloadState: LocalModelDownloadUiState,
     localReadyIds: Set<String>,
     hasAvx2Support: Boolean,
-    onLocalModelPerformance: (String) -> DevicePerformance,
+    onLocalModelPerformance: (String) -> DevicePerformanceUi,
     onDownloadLocalModel: (String) -> Unit,
     onCancelLocalModelDownload: () -> Unit,
     onDeleteLocalModel: (String) -> Unit,

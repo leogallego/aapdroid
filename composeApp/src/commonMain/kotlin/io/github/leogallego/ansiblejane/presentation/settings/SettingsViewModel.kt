@@ -6,10 +6,7 @@ import io.github.leogallego.ansiblejane.assistant.data.IAssistantRepository
 import io.github.leogallego.ansiblejane.assistant.data.KnownProvider
 import io.github.leogallego.ansiblejane.assistant.data.LlmProviderConfig
 import io.github.leogallego.ansiblejane.assistant.data.ModelFetcher
-import io.github.leogallego.ansiblejane.assistant.local.DevicePerformance
 import io.github.leogallego.ansiblejane.assistant.local.ILocalModelRepository
-import io.github.leogallego.ansiblejane.assistant.local.LocalModel
-import io.github.leogallego.ansiblejane.assistant.local.LocalModelDownloadState
 import io.github.leogallego.ansiblejane.assistant.presentation.ModelFetchState
 import io.github.leogallego.ansiblejane.data.ITokenManager
 import io.github.leogallego.ansiblejane.data.IToolManifestRepository
@@ -24,12 +21,15 @@ import io.github.leogallego.ansiblejane.ui.components.DateFormatter
 import io.github.leogallego.ansiblejane.ui.components.TimeFormat
 import io.ktor.http.parseUrl
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.flatMapLatest
 import kotlinx.coroutines.flow.flowOf
+import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import kotlinx.serialization.json.Json
@@ -52,12 +52,19 @@ class SettingsViewModel(
     private val _uiState = MutableStateFlow<SettingsUiState>(SettingsUiState.Loading)
     val uiState: StateFlow<SettingsUiState> = _uiState.asStateFlow()
 
-    val localDownloadState: StateFlow<LocalModelDownloadState> = localModelRepository.downloadState
+    val localDownloadState: StateFlow<LocalModelDownloadUiState> =
+        localModelRepository.downloadState
+            .map { it.toUi() }
+            .stateIn(
+                scope = viewModelScope,
+                started = SharingStarted.Eagerly,
+                initialValue = localModelRepository.downloadState.value.toUi(),
+            )
 
     private val _localReadyIds = MutableStateFlow(emptySet<String>())
     val localReadyIds: StateFlow<Set<String>> = _localReadyIds.asStateFlow()
 
-    val localModelCatalog: List<LocalModel> = localModelRepository.catalog()
+    val localModelCatalog: List<LocalModelUi> = localModelRepository.catalog().map { it.toUi() }
     val hasAvx2Support: Boolean = localModelRepository.hasAvx2Support()
 
     init {
@@ -378,14 +385,14 @@ class SettingsViewModel(
         }
     }
 
-    fun localModelPerformance(modelId: String): DevicePerformance {
-        val model = localModelCatalog.find { it.id == modelId }
+    fun localModelPerformance(modelId: String): DevicePerformanceUi {
+        val model = localModelRepository.catalog().find { it.id == modelId }
         val contextTokens = model?.defaultContextTokens ?: 4_096
-        return localModelRepository.devicePerformance(modelId, contextTokens)
+        return localModelRepository.devicePerformance(modelId, contextTokens).toUi()
     }
 
     private fun refreshLocalReadyIds() {
-        _localReadyIds.value = localModelCatalog
+        _localReadyIds.value = localModelRepository.catalog()
             .map { it.id }
             .filter { localModelRepository.isReady(it) }
             .toSet()
