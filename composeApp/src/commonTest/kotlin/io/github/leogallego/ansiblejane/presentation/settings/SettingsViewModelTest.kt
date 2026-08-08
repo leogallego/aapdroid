@@ -502,6 +502,47 @@ class SettingsViewModelTest {
         val saved = fakeAssistantRepo.allConfigs[KnownProvider.LOCAL.name]
         assertIs<LlmProviderConfig.OnDevice>(saved)
         assertEquals("gemma-4-e4b-it", saved.modelId)
+        assertEquals(4_096, saved.contextTokens)
         assertEquals(KnownProvider.LOCAL.name, fakeAssistantRepo.activeProvider)
+    }
+
+    @Test
+    fun `setLocalModelContextTokens persists and updates active OnDevice`() = runTest {
+        val viewModel = createViewModel()
+
+        viewModel.selectLocalModel("gemma-4-e4b-it")
+        advanceUntilIdle()
+        viewModel.setLocalModelContextTokens("gemma-4-e4b-it", 16_384)
+        advanceUntilIdle()
+
+        assertEquals(16_384, fakeAssistantRepo.getModelContextTokens("gemma-4-e4b-it"))
+        val active = fakeAssistantRepo.allConfigs[KnownProvider.LOCAL.name]
+        assertIs<LlmProviderConfig.OnDevice>(active)
+        assertEquals(16_384, active.contextTokens)
+        val ready = assertIs<SettingsUiState.Ready>(viewModel.uiState.value)
+        assertEquals(16_384, ready.localModelContextTokens["gemma-4-e4b-it"])
+    }
+
+    @Test
+    fun `selectLocalModel copies stored context tokens into OnDevice`() = runTest {
+        fakeAssistantRepo.setModelContextTokens("gemma-4-e4b-it", 8_192)
+        val viewModel = createViewModel()
+
+        viewModel.selectLocalModel("gemma-4-e4b-it")
+        advanceUntilIdle()
+
+        val saved = fakeAssistantRepo.allConfigs[KnownProvider.LOCAL.name]
+        assertIs<LlmProviderConfig.OnDevice>(saved)
+        assertEquals(8_192, saved.contextTokens)
+    }
+
+    @Test
+    fun `persisted localModelContextTokens appear in Ready at init`() = runTest {
+        fakeAssistantRepo.setModelContextTokens("gemma-4-e4b-it", 8_192)
+        val viewModel = createViewModel()
+        advanceUntilIdle()
+
+        val ready = assertIs<SettingsUiState.Ready>(viewModel.uiState.value)
+        assertEquals(8_192, ready.localModelContextTokens["gemma-4-e4b-it"])
     }
 }

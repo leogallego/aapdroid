@@ -45,6 +45,7 @@ sealed interface SettingsUiState {
         val localModelCatalog: List<LocalModelUi> = emptyList(),
         val localDownloadState: LocalModelDownloadUiState = LocalModelDownloadUiState.Idle,
         val localReadyIds: Set<String> = emptySet(),
+        val localModelContextTokens: Map<String, Int> = emptyMap(),
         val hasAvx2Support: Boolean = true,
         // MCP Servers
         val mcpEnabled: Boolean = false,

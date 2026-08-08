@@ -20,7 +20,26 @@ class OnDeviceConfigTest {
         assertEquals(cfg, decoded)
         assertIs<LlmProviderConfig.OnDevice>(decoded)
         assertEquals(TokenSavingMode.TOOLS_ONLY, decoded.tokenSavingMode)
+        assertEquals(0, decoded.contextTokens)
         assertTrue(encoded.contains("on_device"), "serialized JSON should use on_device discriminator")
+    }
+
+    @Test
+    fun onDevice_roundTrip_includesContextTokens() {
+        val original = LlmProviderConfig.OnDevice(modelId = "gemma-4-e4b-it", contextTokens = 8192)
+        val encoded = json.encodeToString(LlmProviderConfig.serializer(), original)
+        val decoded = json.decodeFromString(LlmProviderConfig.serializer(), encoded)
+        assertEquals(original, decoded)
+        assertIs<LlmProviderConfig.OnDevice>(decoded)
+        assertEquals(8192, decoded.contextTokens)
+    }
+
+    @Test
+    fun onDevice_missingContextTokens_defaultsToZero() {
+        val jsonStr = """{"type":"on_device","modelId":"gemma-4-e4b-it"}"""
+        val decoded = json.decodeFromString(LlmProviderConfig.serializer(), jsonStr)
+        assertIs<LlmProviderConfig.OnDevice>(decoded)
+        assertEquals(0, decoded.contextTokens)
     }
 
     @Test

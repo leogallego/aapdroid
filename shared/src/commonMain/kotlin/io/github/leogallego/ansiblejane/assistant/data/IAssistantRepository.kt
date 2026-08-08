@@ -21,6 +21,10 @@ interface IAssistantRepository {
     val savedConfigsFlow: Flow<Map<String, LlmProviderConfig>>
     val activeProviderKeyFlow: Flow<String?>
     suspend fun switchActiveProvider(providerKey: String)
+    /** Per-model on-device context preference; `null` if unset (use catalog default). */
+    suspend fun getModelContextTokens(modelId: String): Int?
+    suspend fun setModelContextTokens(modelId: String, contextTokens: Int)
+    val modelContextTokensFlow: Flow<Map<String, Int>>
     suspend fun getDisabledTools(): Set<String>
     suspend fun getEnabledOverrides(): Set<String>
     suspend fun saveToolState(disabled: Set<String>, enabledOverrides: Set<String>)

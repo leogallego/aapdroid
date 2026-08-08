@@ -45,5 +45,10 @@ sealed interface LlmProviderConfig {
     data class OnDevice(
         val modelId: String,
         override val tokenSavingMode: TokenSavingMode = TokenSavingMode.TOOLS_ONLY,
+        /**
+         * User-selected LiteRT context window in tokens.
+         * `0` means “use catalog [defaultContextTokens]” (backward-compatible default).
+         */
+        val contextTokens: Int = 0,
     ) : LlmProviderConfig
 }

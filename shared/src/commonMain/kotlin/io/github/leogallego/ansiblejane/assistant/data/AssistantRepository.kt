@@ -40,9 +40,11 @@ class AssistantRepository(
         private const val TAG = "AssistantRepository"
         val KEY_LLM_CONFIGS = stringPreferencesKey("llm_configs")
         val KEY_ACTIVE_PROVIDER = stringPreferencesKey("active_provider")
+        val KEY_MODEL_CONTEXT_TOKENS = stringPreferencesKey("model_context_tokens")
         val KEY_DISABLED_TOOLS = stringPreferencesKey("disabled_tools")
         val KEY_ENABLED_OVERRIDES = stringPreferencesKey("enabled_overrides")
         const val MAX_MESSAGES = 100
+        private val STRING_INT_MAP = MapSerializer(String.serializer(), Int.serializer())
     }
 
     override fun addMessage(message: ChatMessage) {
@@ -223,6 +225,42 @@ class AssistantRepository(
     override suspend fun switchActiveProvider(providerKey: String) {
         assistantDataStore.edit { prefs ->
             prefs[KEY_ACTIVE_PROVIDER] = providerKey
+        }
+    }
+
+    override suspend fun getModelContextTokens(modelId: String): Int? =
+        loadModelContextTokensMap()[modelId]
+
+    override suspend fun setModelContextTokens(modelId: String, contextTokens: Int) {
+        val current = loadModelContextTokensMap().toMutableMap()
+        current[modelId] = contextTokens
+        val mapJson = json.encodeToString(STRING_INT_MAP, current)
+        assistantDataStore.edit { prefs ->
+            prefs[KEY_MODEL_CONTEXT_TOKENS] = mapJson
+        }
+    }
+
+    override val modelContextTokensFlow: Flow<Map<String, Int>> =
+        assistantDataStore.data.map { prefs ->
+            val mapJson = prefs[KEY_MODEL_CONTEXT_TOKENS] ?: return@map emptyMap()
+            try {
+                json.decodeFromString(STRING_INT_MAP, mapJson)
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                DebugLog.w(TAG, "Failed to deserialize model context tokens: ${e.message}")
+                emptyMap()
+            }
+        }.distinctUntilChanged()
+
+    private suspend fun loadModelContextTokensMap(): Map<String, Int> {
+        val prefs = assistantDataStore.data.first()
+        val mapJson = prefs[KEY_MODEL_CONTEXT_TOKENS] ?: return emptyMap()
+        return try {
+            json.decodeFromString(STRING_INT_MAP, mapJson)
+        } catch (e: Exception) {
+            DebugLog.w(TAG, "Failed to deserialize model context tokens: ${e.message}")
+            emptyMap()
         }
     }
 

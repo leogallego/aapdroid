@@ -455,7 +455,8 @@ class AssistantViewModel(
     }
 
     private fun providerCacheIdentity(config: LlmProviderConfig): String = when (config) {
-        is LlmProviderConfig.OnDevice -> "local|${config.modelId}"
+        is LlmProviderConfig.OnDevice ->
+            "local|${config.modelId}|${resolveContextCharsForConfig(config)}"
         is LlmProviderConfig.OpenAiCompatible ->
             "${config.url}|${config.model}|${config.apiKey}"
     }

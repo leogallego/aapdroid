@@ -19,6 +19,8 @@ import com.google.ai.edge.litertlm.ToolCall as LiteRtToolCall
 import com.google.ai.edge.litertlm.tool
 import io.github.leogallego.ansiblejane.assistant.data.LlmProviderConfig
 import io.github.leogallego.ansiblejane.assistant.local.ILocalModelRepository
+import io.github.leogallego.ansiblejane.assistant.local.LOCAL_MODEL_CATALOG
+import io.github.leogallego.ansiblejane.assistant.local.resolveOnDeviceContextTokens
 import java.io.File
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
@@ -64,6 +66,7 @@ class LocalLlmProvider internal constructor(
     @Volatile private var engine: Engine? = null
     @Volatile private var conversation: Conversation? = null
     @Volatile private var loadedModelId: String? = null
+    @Volatile private var loadedContextTokens: Int? = null
     private val idleRelease = IdleReleaseScheduler(scope) { releaseEngine() }
 
     override fun generateStream(
@@ -136,8 +139,9 @@ class LocalLlmProvider internal constructor(
         val modelPath = modelRepository.modelPath(config.modelId)
             ?: throw LlmServerException("On-device model not downloaded: ${config.modelId}")
 
-        if (loadedModelId != config.modelId || engine == null) {
-            swapEngine(modelPath)
+        val requestedContext = resolveOnDeviceContextTokens(config.modelId, config.contextTokens)
+        if (loadedModelId != config.modelId || loadedContextTokens != requestedContext || engine == null) {
+            swapEngine(modelPath, requestedContext)
         }
         val currentEngine = engine ?: throw LlmServerException("On-device engine failed to initialize")
 
@@ -168,7 +172,7 @@ class LocalLlmProvider internal constructor(
         return next
     }
 
-    private suspend fun swapEngine(modelPath: String) {
+    private suspend fun swapEngine(modelPath: String, requestedContext: Int) {
         val hadExisting = engine != null
         releaseEngine()
         _engineState.value = LocalEngineState.Loading
@@ -180,26 +184,66 @@ class LocalLlmProvider internal constructor(
         }
         try {
             val cacheDir = File(modelPath).parentFile?.absolutePath
-            fun initWithBackend(backend: Backend): Engine {
-                val instance = Engine(EngineConfig(modelPath = modelPath, backend = backend, cacheDir = cacheDir))
+            fun initWithBackend(backend: Backend, maxNumTokens: Int?): Engine {
+                val instance = Engine(
+                    EngineConfig(
+                        modelPath = modelPath,
+                        backend = backend,
+                        cacheDir = cacheDir,
+                        maxNumTokens = maxNumTokens,
+                    )
+                )
                 instance.initialize()
                 return instance
             }
 
-            val newEngine = try {
-                initWithBackend(Backend.GPU()).also {
-                    // Only set once GPU init actually succeeds — never leave a stale `true`
-                    // stuck on a CPU-only engine from an earlier GPU init (#264 Task 6 Important #5).
-                    ExperimentalFlags.enableSpeculativeDecoding = true
+            fun initGpuThenCpu(maxNumTokens: Int?): Engine {
+                return try {
+                    initWithBackend(Backend.GPU(), maxNumTokens).also {
+                        // Only set once GPU init actually succeeds — never leave a stale `true`
+                        // stuck on a CPU-only engine from an earlier GPU init (#264 Task 6 Important #5).
+                        ExperimentalFlags.enableSpeculativeDecoding = true
+                    }
+                } catch (e: CancellationException) {
+                    throw e
+                } catch (e: Exception) {
+                    ExperimentalFlags.enableSpeculativeDecoding = false
+                    initWithBackend(Backend.CPU(), maxNumTokens)
                 }
+            }
+
+            val catalogDefault = LOCAL_MODEL_CATALOG.find { it.id == config.modelId }?.defaultContextTokens
+                ?: 4_096
+            // Prefer requested size; fall back to catalog default, then engine default (null).
+            // On success always record the *requested* context (Kai pattern) so we do not
+            // thrash re-init when LiteRT accepted a smaller window; user preference stays put
+            // for a later retry after restart / model swap.
+            val newEngine = try {
+                initGpuThenCpu(requestedContext)
             } catch (e: CancellationException) {
                 throw e
             } catch (e: Exception) {
-                ExperimentalFlags.enableSpeculativeDecoding = false
-                initWithBackend(Backend.CPU())
+                if (requestedContext != catalogDefault) {
+                    try {
+                        initGpuThenCpu(catalogDefault)
+                    } catch (e2: CancellationException) {
+                        throw e2
+                    } catch (_: Exception) {
+                        initGpuThenCpu(null)
+                    }
+                } else {
+                    try {
+                        initGpuThenCpu(null)
+                    } catch (e2: CancellationException) {
+                        throw e2
+                    } catch (_: Exception) {
+                        throw e
+                    }
+                }
             }
             engine = newEngine
             loadedModelId = config.modelId
+            loadedContextTokens = requestedContext
         } catch (e: CancellationException) {
             _engineState.value = LocalEngineState.Error
             throw e
@@ -215,6 +259,7 @@ class LocalLlmProvider internal constructor(
         conversation = null
         engine = null
         loadedModelId = null
+        loadedContextTokens = null
         runCatching { conv?.close() }
         runCatching { eng?.close() }
         _engineState.value = LocalEngineState.Uninitialized
