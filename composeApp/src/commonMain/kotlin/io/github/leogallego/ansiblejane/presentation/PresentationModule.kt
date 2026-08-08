@@ -57,6 +57,7 @@ val presentationModule = module {
             tokenManager = get(),
             manifestRepository = get(),
             toolRouter = get(),
+            localModelRepository = get(),
             localTools = getAll<LocalTool>()
         )
     }
@@ -69,6 +70,7 @@ val presentationModule = module {
             mcpConnectionRepository = get(),
             manifestRepository = get(),
             toolRouter = get(),
+            localModelRepository = get(),
             json = get(),
             modelFetcher = get()
         )

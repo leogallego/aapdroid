@@ -1,0 +1,77 @@
+package io.github.leogallego.ansiblejane.presentation.settings
+
+import aapremotecontrol.composeapp.generated.resources.Res
+import aapremotecontrol.composeapp.generated.resources.agent_local_disk_insufficient
+import aapremotecontrol.composeapp.generated.resources.agent_local_download_failed
+import aapremotecontrol.composeapp.generated.resources.agent_local_hash_mismatch
+import io.github.leogallego.ansiblejane.assistant.local.DevicePerformance
+import io.github.leogallego.ansiblejane.assistant.local.LocalModel
+import io.github.leogallego.ansiblejane.assistant.local.LocalModelDownloadErrorKind
+import io.github.leogallego.ansiblejane.assistant.local.LocalModelDownloadState
+import org.jetbrains.compose.resources.StringResource
+
+/** Presentation-layer catalog row for on-device models (UI must not import repository types). */
+data class LocalModelUi(
+    val id: String,
+    val displayName: String,
+    val sizeBytes: Long,
+    val isRecommended: Boolean,
+)
+
+enum class DevicePerformanceUi {
+    GOOD,
+    OK,
+    POOR,
+}
+
+sealed interface LocalModelDownloadUiState {
+    data object Idle : LocalModelDownloadUiState
+
+    data class Downloading(
+        val modelId: String,
+        val bytesReceived: Long,
+        val totalBytes: Long,
+    ) : LocalModelDownloadUiState
+
+    data class Succeeded(val modelId: String) : LocalModelDownloadUiState
+
+    data class Error(
+        val modelId: String,
+        val message: StringResource,
+    ) : LocalModelDownloadUiState
+}
+
+fun LocalModel.toUi(): LocalModelUi = LocalModelUi(
+    id = id,
+    displayName = displayName,
+    sizeBytes = sizeBytes,
+    isRecommended = isRecommended,
+)
+
+fun DevicePerformance.toUi(): DevicePerformanceUi = when (this) {
+    DevicePerformance.GOOD -> DevicePerformanceUi.GOOD
+    DevicePerformance.OK -> DevicePerformanceUi.OK
+    DevicePerformance.POOR -> DevicePerformanceUi.POOR
+}
+
+fun LocalModelDownloadState.toUi(): LocalModelDownloadUiState = when (this) {
+    LocalModelDownloadState.Idle -> LocalModelDownloadUiState.Idle
+    is LocalModelDownloadState.Downloading -> LocalModelDownloadUiState.Downloading(
+        modelId = modelId,
+        bytesReceived = bytesReceived,
+        totalBytes = totalBytes,
+    )
+    is LocalModelDownloadState.Succeeded -> LocalModelDownloadUiState.Succeeded(modelId)
+    is LocalModelDownloadState.Error -> LocalModelDownloadUiState.Error(
+        modelId = modelId,
+        message = kind.toUiMessage(),
+    )
+}
+
+fun LocalModelDownloadErrorKind.toUiMessage(): StringResource = when (this) {
+    LocalModelDownloadErrorKind.DISK -> Res.string.agent_local_disk_insufficient
+    LocalModelDownloadErrorKind.HASH -> Res.string.agent_local_hash_mismatch
+    LocalModelDownloadErrorKind.NETWORK,
+    LocalModelDownloadErrorKind.OTHER,
+    -> Res.string.agent_local_download_failed
+}

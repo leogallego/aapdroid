@@ -112,6 +112,8 @@ object ModelCapabilityResolver {
             KnownProvider.OPENROUTER,
             KnownProvider.GROQ -> ModelCapability.Full
 
+            KnownProvider.LOCAL -> ModelCapability.Simple
+
             KnownProvider.OLLAMA,
             KnownProvider.ABBENAY,
             KnownProvider.CUSTOM -> resolveFromModelHints(model)

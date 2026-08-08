@@ -26,6 +26,7 @@ markdownRenderer = "0.43.0"
 ktor = "3.5.0"
 koog = "1.1.1"
 koog-google = "1.1.1-beta"
+litert-lm = "0.15.0"
 atomicfu = "0.33.0"
 mcp-sdk = "0.14.0"
 robolectric = "4.16.1"
@@ -121,6 +122,8 @@ koog-google-client = { group = "ai.koog", name = "prompt-executor-google-client"
 koog-http-ktor = { group = "ai.koog", name = "http-client-ktor", version.ref = "koog" }
 mcp-sdk-client = { group = "io.modelcontextprotocol", name = "kotlin-sdk-client", version.ref = "mcp-sdk" }
 kotlinx-atomicfu = { group = "org.jetbrains.kotlinx", name = "atomicfu", version.ref = "atomicfu" }
+litert-lm-android = { group = "com.google.ai.edge.litertlm", name = "litertlm-android", version.ref = "litert-lm" }
+litert-lm-jvm = { group = "com.google.ai.edge.litertlm", name = "litertlm-jvm", version.ref = "litert-lm" }
 
 # Markdown
 markdown-renderer = { group = "com.mikepenz", name = "multiplatform-markdown-renderer", version.ref = "markdownRenderer" }

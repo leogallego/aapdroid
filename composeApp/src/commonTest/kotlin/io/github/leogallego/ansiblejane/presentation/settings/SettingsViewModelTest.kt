@@ -1,15 +1,19 @@
 package io.github.leogallego.ansiblejane.presentation.settings
 
 import app.cash.turbine.test
+import io.github.leogallego.ansiblejane.assistant.data.KnownProvider
 import io.github.leogallego.ansiblejane.assistant.data.LlmProviderConfig
 import io.github.leogallego.ansiblejane.assistant.data.ModelFetcher
 import io.github.leogallego.ansiblejane.assistant.engine.ToolRouter
+import io.github.leogallego.ansiblejane.presentation.settings.LocalModelDownloadUiState
+import io.github.leogallego.ansiblejane.presentation.settings.SettingsUiState
 import io.github.leogallego.ansiblejane.assistant.tools.LocalTool
 import io.github.leogallego.ansiblejane.assistant.tools.ToolResult
 import io.github.leogallego.ansiblejane.assistant.tools.ToolSpec
 import io.github.leogallego.ansiblejane.assistant.tools.ToolSource
 import io.github.leogallego.ansiblejane.fakes.FakeAssistantRepository
 import io.github.leogallego.ansiblejane.fakes.FakeAuthRepository
+import io.github.leogallego.ansiblejane.fakes.FakeLocalModelRepository
 import io.github.leogallego.ansiblejane.fakes.FakeMcpConnectionRepository
 import io.github.leogallego.ansiblejane.fakes.FakeTokenManager
 import io.github.leogallego.ansiblejane.fakes.FakeUserPreferencesRepository
@@ -23,6 +27,8 @@ import io.ktor.client.engine.mock.respond
 import io.ktor.http.HttpHeaders
 import io.ktor.http.HttpStatusCode
 import io.ktor.http.headersOf
+import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.test.advanceUntilIdle
 import kotlinx.coroutines.test.runTest
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonObject
@@ -31,15 +37,18 @@ import kotlin.test.BeforeTest
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
+import kotlin.test.assertIs
 import kotlin.test.assertNull
 import kotlin.test.assertTrue
 
+@OptIn(ExperimentalCoroutinesApi::class)
 class SettingsViewModelTest {
 
     private lateinit var fakeTokenManager: FakeTokenManager
     private lateinit var fakeAuthRepository: FakeAuthRepository
     private lateinit var fakeUserPreferences: FakeUserPreferencesRepository
     private lateinit var fakeAssistantRepo: FakeAssistantRepository
+    private lateinit var fakeLocalModelRepo: FakeLocalModelRepository
     private lateinit var mcpConnectionRepository: FakeMcpConnectionRepository
     private val json = Json { ignoreUnknownKeys = true }
 
@@ -64,6 +73,7 @@ class SettingsViewModelTest {
         fakeAuthRepository = FakeAuthRepository(fakeTokenManager)
         fakeUserPreferences = FakeUserPreferencesRepository()
         fakeAssistantRepo = FakeAssistantRepository()
+        fakeLocalModelRepo = FakeLocalModelRepository()
         mcpConnectionRepository = FakeMcpConnectionRepository()
     }
 
@@ -78,7 +88,10 @@ class SettingsViewModelTest {
         override suspend fun execute(args: JsonObject) = ToolResult(success = true)
     }
 
-    private fun createViewModel(localTools: List<LocalTool> = emptyList()) = SettingsViewModel(
+    private fun createViewModel(
+        localTools: List<LocalTool> = emptyList(),
+        localModelRepository: FakeLocalModelRepository = fakeLocalModelRepo,
+    ) = SettingsViewModel(
         tokenManager = fakeTokenManager,
         authRepository = fakeAuthRepository,
         userPreferences = fakeUserPreferences,
@@ -86,6 +99,7 @@ class SettingsViewModelTest {
         mcpConnectionRepository = mcpConnectionRepository,
         manifestRepository = io.github.leogallego.ansiblejane.fakes.FakeToolManifestRepository(),
         toolRouter = ToolRouter(initialLocalTools = localTools, repository = fakeAssistantRepo),
+        localModelRepository = localModelRepository,
         json = json,
         modelFetcher = ModelFetcher(json) { _ ->
             HttpClient(MockEngine) {
@@ -430,5 +444,64 @@ class SettingsViewModelTest {
             val updated = awaitItem() as SettingsUiState.Ready
             assertEquals("America/New_York", updated.timezoneId)
         }
+    }
+
+    // --- On-device local models ---
+
+    @Test
+    fun `downloadLocalModel delegates to repository and marks ready`() = runTest {
+        val viewModel = createViewModel()
+        advanceUntilIdle()
+        val modelId = "gemma-4-e4b-it"
+
+        viewModel.downloadLocalModel(modelId)
+        advanceUntilIdle()
+
+        assertEquals(listOf(modelId), fakeLocalModelRepo.downloadCalls)
+        val ready = assertIs<SettingsUiState.Ready>(viewModel.uiState.value)
+        assertTrue(modelId in ready.localReadyIds)
+        assertIs<LocalModelDownloadUiState.Succeeded>(ready.localDownloadState)
+    }
+
+    @Test
+    fun `cancelLocalModelDownload delegates to repository`() = runTest {
+        val viewModel = createViewModel()
+        advanceUntilIdle()
+
+        viewModel.cancelLocalModelDownload()
+        advanceUntilIdle()
+
+        assertEquals(1, fakeLocalModelRepo.cancelCalls)
+        val ready = assertIs<SettingsUiState.Ready>(viewModel.uiState.value)
+        assertIs<LocalModelDownloadUiState.Idle>(ready.localDownloadState)
+    }
+
+    @Test
+    fun `deleteLocalModel removes readiness`() = runTest {
+        val readyRepo = FakeLocalModelRepository(readyIds = setOf("gemma-4-e4b-it"))
+        val viewModel = createViewModel(localModelRepository = readyRepo)
+        advanceUntilIdle()
+        val before = assertIs<SettingsUiState.Ready>(viewModel.uiState.value)
+        assertTrue("gemma-4-e4b-it" in before.localReadyIds)
+
+        viewModel.deleteLocalModel("gemma-4-e4b-it")
+        advanceUntilIdle()
+
+        assertEquals(listOf("gemma-4-e4b-it"), readyRepo.deleteCalls)
+        val after = assertIs<SettingsUiState.Ready>(viewModel.uiState.value)
+        assertFalse("gemma-4-e4b-it" in after.localReadyIds)
+    }
+
+    @Test
+    fun `selectLocalModel saves OnDevice config and activates LOCAL`() = runTest {
+        val viewModel = createViewModel()
+
+        viewModel.selectLocalModel("gemma-4-e4b-it")
+        advanceUntilIdle()
+
+        val saved = fakeAssistantRepo.allConfigs[KnownProvider.LOCAL.name]
+        assertIs<LlmProviderConfig.OnDevice>(saved)
+        assertEquals("gemma-4-e4b-it", saved.modelId)
+        assertEquals(KnownProvider.LOCAL.name, fakeAssistantRepo.activeProvider)
     }
 }

@@ -22,6 +22,7 @@ import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import io.github.leogallego.ansiblejane.assistant.tools.ToolSource
+import io.github.leogallego.ansiblejane.presentation.settings.DevicePerformanceUi
 import io.github.leogallego.ansiblejane.presentation.settings.SettingsTab
 import io.github.leogallego.ansiblejane.presentation.settings.SettingsUiState
 import io.github.leogallego.ansiblejane.presentation.settings.SettingsViewModel
@@ -76,6 +77,11 @@ fun SettingsScreen(
                     onSwitchActiveProvider = { viewModel.switchActiveProvider(it) },
                     onFetchModels = { url, key -> viewModel.fetchAvailableModels(url, key) },
                     onClearFetchedModels = { viewModel.clearFetchedModels() },
+                    onLocalModelPerformance = { viewModel.localModelPerformance(it) },
+                    onDownloadLocalModel = { viewModel.downloadLocalModel(it) },
+                    onCancelLocalModelDownload = { viewModel.cancelLocalModelDownload() },
+                    onDeleteLocalModel = { viewModel.deleteLocalModel(it) },
+                    onSelectLocalModel = { viewModel.selectLocalModel(it) },
                     onToggleMcp = { viewModel.toggleMcpEnabled(it) },
                     onAddMcpServer = { url, label, toolset, headers, useInstanceAuth ->
                         viewModel.addMcpServer(url, label, toolset, headers, useInstanceAuth)
@@ -120,6 +126,11 @@ private fun SettingsContent(
     onSwitchActiveProvider: (String) -> Unit,
     onFetchModels: (String, String?) -> Unit,
     onClearFetchedModels: () -> Unit,
+    onLocalModelPerformance: (String) -> DevicePerformanceUi,
+    onDownloadLocalModel: (String) -> Unit,
+    onCancelLocalModelDownload: () -> Unit,
+    onDeleteLocalModel: (String) -> Unit,
+    onSelectLocalModel: (String) -> Unit,
     onToggleMcp: (Boolean) -> Unit,
     onAddMcpServer: (String, String, String?, Map<String, String>, Boolean) -> Unit,
     onRemoveMcpServer: (String) -> Unit,
@@ -181,6 +192,15 @@ private fun SettingsContent(
                 onClearFetchedModels = onClearFetchedModels,
                 onSaveProviderConfig = onSaveProviderConfig,
                 onSwitchActiveProvider = onSwitchActiveProvider,
+                localModelCatalog = state.localModelCatalog,
+                localDownloadState = state.localDownloadState,
+                localReadyIds = state.localReadyIds,
+                hasAvx2Support = state.hasAvx2Support,
+                onLocalModelPerformance = onLocalModelPerformance,
+                onDownloadLocalModel = onDownloadLocalModel,
+                onCancelLocalModelDownload = onCancelLocalModelDownload,
+                onDeleteLocalModel = onDeleteLocalModel,
+                onSelectLocalModel = onSelectLocalModel,
                 onClearHistory = onClearHistory,
                 modifier = Modifier.weight(1f)
             )

@@ -3,8 +3,10 @@ package io.github.leogallego.ansiblejane.presentation.settings
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import io.github.leogallego.ansiblejane.assistant.data.IAssistantRepository
+import io.github.leogallego.ansiblejane.assistant.data.KnownProvider
 import io.github.leogallego.ansiblejane.assistant.data.LlmProviderConfig
 import io.github.leogallego.ansiblejane.assistant.data.ModelFetcher
+import io.github.leogallego.ansiblejane.assistant.local.ILocalModelRepository
 import io.github.leogallego.ansiblejane.assistant.presentation.ModelFetchState
 import io.github.leogallego.ansiblejane.data.ITokenManager
 import io.github.leogallego.ansiblejane.data.IToolManifestRepository
@@ -25,6 +27,7 @@ import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.flatMapLatest
 import kotlinx.coroutines.flow.flowOf
+import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import kotlinx.serialization.json.Json
@@ -39,12 +42,17 @@ class SettingsViewModel(
     private val mcpConnectionRepository: IMcpConnectionRepository,
     private val manifestRepository: IToolManifestRepository,
     private val toolRouter: ToolRouter,
+    private val localModelRepository: ILocalModelRepository,
     private val json: Json,
     private val modelFetcher: ModelFetcher
 ) : ViewModel() {
 
     private val _uiState = MutableStateFlow<SettingsUiState>(SettingsUiState.Loading)
     val uiState: StateFlow<SettingsUiState> = _uiState.asStateFlow()
+
+    private val localModelCatalog: List<LocalModelUi> =
+        localModelRepository.catalog().map { it.toUi() }
+    private val hasAvx2Support: Boolean = localModelRepository.hasAvx2Support()
 
     init {
         viewModelScope.launch {
@@ -93,6 +101,14 @@ class SettingsViewModel(
                 val preservedExpandedMcp = (current as? SettingsUiState.Ready)?.expandedMcpServers ?: emptySet()
                 val preservedExpandedCats = (current as? SettingsUiState.Ready)?.expandedCategories ?: emptySet()
                 val preservedLocalTools = (current as? SettingsUiState.Ready)?.localTools ?: initialLocalTools
+                val preservedLocalDownload = (current as? SettingsUiState.Ready)?.localDownloadState
+                    ?: localModelRepository.downloadState.value.toUi()
+                val preservedLocalReadyIds = (current as? SettingsUiState.Ready)?.localReadyIds
+                    ?: computeLocalReadyIds()
+                val preservedLocalCatalog = (current as? SettingsUiState.Ready)?.localModelCatalog
+                    ?: localModelCatalog
+                val preservedAvx2 = (current as? SettingsUiState.Ready)?.hasAvx2Support
+                    ?: hasAvx2Support
 
                 val allMcpTools = mcpConnectionRepository.mcpTools.value
                 val mcpServerTools = allMcpTools
@@ -125,6 +141,10 @@ class SettingsViewModel(
                     activeProviderKey = preservedActiveKey,
                     fetchedModels = preservedFetchedModels,
                     modelFetchState = preservedModelFetchState,
+                    localModelCatalog = preservedLocalCatalog,
+                    localDownloadState = preservedLocalDownload,
+                    localReadyIds = preservedLocalReadyIds,
+                    hasAvx2Support = preservedAvx2,
                     mcpEnabled = active?.mcpEnabled ?: false,
                     mcpServers = active?.mcpServerUrls ?: emptyList(),
                     connections = connections,
@@ -169,6 +189,13 @@ class SettingsViewModel(
             }
         }
 
+        viewModelScope.launch {
+            localModelRepository.downloadState
+                .map { it.toUi() }
+                .collect { downloadUi ->
+                    updateReady { copy(localDownloadState = downloadUi) }
+                }
+        }
     }
 
     // --- Tab ---
@@ -332,6 +359,50 @@ class SettingsViewModel(
 
     fun clearFetchedModels() {
         updateReady { copy(fetchedModels = emptyList(), modelFetchState = ModelFetchState.Idle) }
+    }
+
+    fun downloadLocalModel(modelId: String) {
+        viewModelScope.launch {
+            localModelRepository.download(modelId)
+            refreshLocalReadyIds()
+        }
+    }
+
+    fun cancelLocalModelDownload() {
+        localModelRepository.cancelDownload()
+    }
+
+    fun deleteLocalModel(modelId: String) {
+        viewModelScope.launch {
+            localModelRepository.delete(modelId)
+            refreshLocalReadyIds()
+        }
+    }
+
+    fun selectLocalModel(modelId: String) {
+        viewModelScope.launch {
+            val config = LlmProviderConfig.OnDevice(modelId = modelId)
+            val current = assistantRepository.loadAllLlmConfigs().toMutableMap()
+            current[KnownProvider.LOCAL.name] = config
+            assistantRepository.saveAllLlmConfigs(current)
+            assistantRepository.switchActiveProvider(KnownProvider.LOCAL.name)
+        }
+    }
+
+    fun localModelPerformance(modelId: String): DevicePerformanceUi {
+        val model = localModelRepository.catalog().find { it.id == modelId }
+        val contextTokens = model?.defaultContextTokens ?: 4_096
+        return localModelRepository.devicePerformance(modelId, contextTokens).toUi()
+    }
+
+    private fun computeLocalReadyIds(): Set<String> =
+        localModelRepository.catalog()
+            .map { it.id }
+            .filter { localModelRepository.isReady(it) }
+            .toSet()
+
+    private fun refreshLocalReadyIds() {
+        updateReady { copy(localReadyIds = computeLocalReadyIds()) }
     }
 
     // --- Tools (MCP) ---

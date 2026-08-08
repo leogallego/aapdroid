@@ -80,6 +80,7 @@ kotlin {
             implementation(libs.tink.android) // Kept for TinkMigration — remove after one release cycle
             implementation(libs.androidx.work.runtime)
             implementation(libs.cryptography.provider.jdk)
+            implementation(libs.litert.lm.android)
         }
 
         jvmMain {
@@ -87,6 +88,7 @@ kotlin {
             dependencies {
                 implementation(libs.ktor.client.cio)
                 implementation(libs.cryptography.provider.jdk)
+                implementation(libs.litert.lm.jvm)
             }
         }
 
