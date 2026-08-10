@@ -421,7 +421,7 @@ jobs:
       # cache-key is runtime-scoped, not manifest-hash: CI patches sha256/path each
       # release, so a content hash would never hit.
       - name: Build Flatpak
-        uses: flatpak/flatpak-github-actions/flatpak-builder@fc80c13788c1ba0f45add99b19cf26b616ccab4f # v6.4
+        uses: flatpak/flatpak-github-actions/flatpak-builder@401fe28a8384095fc1531b9d320b292f0ee45adb # v6.7
         with:
           bundle: ansible-jane-desktop-linux-${{ env.VERSION }}.flatpak
           manifest-path: flatpak/io.github.leogallego.ansiblejane.yaml
