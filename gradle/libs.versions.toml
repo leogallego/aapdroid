@@ -4,7 +4,7 @@ kotlin = "2.4.10"
 compose-multiplatform = "1.11.1"
 # Material3 and icons are decoupled from the CMP plugin — check compatibility table when bumping:
 # https://kotlinlang.org/docs/multiplatform/compose-compatibility-and-versioning.html
-compose-material3 = "1.12.0-alpha01"
+compose-material3 = "1.12.0-alpha03"
 compose-material-icons = "1.7.3"
 cmp-navigation = "2.9.2"
 compose-bom = "2026.06.00"
