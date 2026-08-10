@@ -38,7 +38,7 @@ androidx-espresso-core = "3.7.0"
 # 1.5.x required for AGP 9 new DSL (1.4.x fails: "not a supported android module")
 androidx-benchmark = "1.5.0-beta01"
 androidx-profileinstaller = "1.4.1"
-screenshot = "0.0.1-alpha15"
+screenshot = "0.0.1-alpha16"
 
 [libraries]
 # Compose BOM (Android-only, kept for :app during migration)
