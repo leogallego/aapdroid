@@ -29,6 +29,12 @@
     <string name="notification_approval_failed_message">Please try again</string>
     <string name="notification_no_active_instance">No active instance</string>
 
+    <!-- Notification: LiteRT model download FGS (#481) -->
+    <string name="model_download_channel_name">Model downloads</string>
+    <string name="model_download_channel_description">Progress for on-device LiteRT model downloads</string>
+    <string name="model_download_notification_text">Downloading model…</string>
+    <string name="model_download_notification_progress">Downloading… %1$d%%</string>
+
 
     <!-- Shared component text -->
     <string name="show_details">Show details</string>
