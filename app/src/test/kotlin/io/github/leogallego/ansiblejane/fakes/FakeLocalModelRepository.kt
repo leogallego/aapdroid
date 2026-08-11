@@ -54,6 +54,8 @@ class FakeLocalModelRepository(
         )
     }
 
+    override fun findExistingImportCandidate(modelId: String): String? = null
+
     override fun devicePerformance(modelId: String, contextTokens: Int): DevicePerformance =
         DevicePerformance.OK
 
