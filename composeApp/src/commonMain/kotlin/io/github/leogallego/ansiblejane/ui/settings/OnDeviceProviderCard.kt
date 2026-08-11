@@ -31,7 +31,6 @@ import androidx.compose.material3.Slider
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -73,8 +72,6 @@ import io.github.leogallego.ansiblejane.presentation.settings.LocalModelDownload
 import io.github.leogallego.ansiblejane.presentation.settings.LocalModelUi
 import io.github.leogallego.ansiblejane.presentation.settings.formatLocalModelSizeGb
 import io.github.leogallego.ansiblejane.ui.theme.AnsibleJaneTheme
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.withContext
 import kotlin.math.roundToInt
 import org.jetbrains.compose.resources.stringResource
 
@@ -237,16 +234,7 @@ internal fun LocalModelRow(
     val isDownloadingThis = downloading?.modelId == model.id
     val error = downloadState as? LocalModelDownloadUiState.Error
     val errorForThis = error?.takeIf { it.modelId == model.id }
-    var existingPath by remember(model.fileName) { mutableStateOf<String?>(null) }
-    LaunchedEffect(model.fileName, isReady) {
-        existingPath = if (isReady) {
-            null
-        } else {
-            withContext(Dispatchers.IO) {
-                findCatalogModelInDownloads(model.fileName)
-            }
-        }
-    }
+    val existingPath = model.existingImportPath
     var importPrepareStarted by remember { mutableStateOf(false) }
     val importController = rememberLocalModelImportController(
         onPreparing = {

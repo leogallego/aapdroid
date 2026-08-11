@@ -1,5 +1,6 @@
 package io.github.leogallego.ansiblejane.assistant.local
 
+import android.os.Environment
 import java.io.File
 import java.io.FileInputStream
 import java.io.FileOutputStream
@@ -66,5 +67,15 @@ internal actual object LocalModelFiles {
             file = File(file, part)
         }
         return file.path
+    }
+
+    actual fun findInUserDownloads(fileName: String): String? {
+        val downloads = Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS)
+        val candidate = File(downloads, fileName)
+        return if (candidate.isFile && candidate.canRead() && candidate.length() > 0L) {
+            candidate.absolutePath
+        } else {
+            null
+        }
     }
 }

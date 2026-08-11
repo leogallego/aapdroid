@@ -32,6 +32,9 @@ import org.koin.dsl.module
 val sharedAssistantModule = module {
     single<IDeviceResources> { get<DeviceResources>().asIDeviceResources() }
 
+    // Process-scoped transfer scope (#478): must outlive Settings ViewModel so multi-GB
+    // LiteRT download/import is not cancelled when leaving the screen. Do not use viewModelScope.
+    // Optional later: inject named("localModelTransfers") with the same process lifetime.
     single {
         LocalModelRepository(
             deviceResources = get(),

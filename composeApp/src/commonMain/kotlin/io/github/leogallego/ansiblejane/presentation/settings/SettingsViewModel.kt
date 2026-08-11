@@ -52,8 +52,6 @@ class SettingsViewModel(
     private val _uiState = MutableStateFlow<SettingsUiState>(SettingsUiState.Loading)
     val uiState: StateFlow<SettingsUiState> = _uiState.asStateFlow()
 
-    private val localModelCatalog: List<LocalModelUi> =
-        localModelRepository.catalog().map { it.toUi() }
     private val hasAvx2Support: Boolean = localModelRepository.hasAvx2Support()
 
     init {
@@ -110,8 +108,9 @@ class SettingsViewModel(
                     ?: localModelRepository.downloadState.value.toUi()
                 val preservedLocalReadyIds = (current as? SettingsUiState.Ready)?.localReadyIds
                     ?: computeLocalReadyIds()
+                // Initial catalog without Downloads scan; refreshLocalReadyIds() fills paths.
                 val preservedLocalCatalog = (current as? SettingsUiState.Ready)?.localModelCatalog
-                    ?: localModelCatalog
+                    ?: localModelRepository.catalog().map { it.toUi() }
                 val preservedLocalContextTokens =
                     (current as? SettingsUiState.Ready)?.localModelContextTokens
                         ?: initialLocalContextTokens
@@ -210,6 +209,11 @@ class SettingsViewModel(
             assistantRepository.modelContextTokensFlow.collect { tokens ->
                 updateReady { copy(localModelContextTokens = tokens) }
             }
+        }
+
+        // Best-effort Downloads discovery (#479); single File.exists per catalog row.
+        viewModelScope.launch {
+            refreshLocalReadyIds()
         }
     }
 
@@ -451,8 +455,25 @@ class SettingsViewModel(
             .filter { localModelRepository.isReady(it) }
             .toSet()
 
+    private fun buildLocalModelCatalog(readyIds: Set<String>): List<LocalModelUi> =
+        localModelRepository.catalog().map { model ->
+            val existing = if (model.id in readyIds) {
+                null
+            } else {
+                localModelRepository.findExistingImportCandidate(model.id)
+            }
+            model.toUi(existingImportPath = existing)
+        }
+
     private fun refreshLocalReadyIds() {
-        updateReady { copy(localReadyIds = computeLocalReadyIds()) }
+        val readyIds = computeLocalReadyIds()
+        val catalogUi = buildLocalModelCatalog(readyIds)
+        updateReady {
+            copy(
+                localReadyIds = readyIds,
+                localModelCatalog = catalogUi,
+            )
+        }
     }
 
     // --- Tools (MCP) ---

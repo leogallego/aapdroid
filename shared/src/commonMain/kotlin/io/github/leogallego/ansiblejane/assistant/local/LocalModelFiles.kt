@@ -21,4 +21,9 @@ internal expect object LocalModelFiles {
     fun openSink(path: String, append: Boolean = false): ModelFileSink
     fun openSource(path: String): ModelFileSource
     fun join(parent: String, vararg parts: String): String
+    /**
+     * Best-effort lookup of [fileName] under the user Downloads directory.
+     * Returns an absolute path when the file exists, is readable, and non-empty.
+     */
+    fun findInUserDownloads(fileName: String): String?
 }

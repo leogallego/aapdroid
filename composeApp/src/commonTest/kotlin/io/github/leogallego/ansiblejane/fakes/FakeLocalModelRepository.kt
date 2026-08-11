@@ -28,6 +28,7 @@ class FakeLocalModelRepository(
         private set
     var importCalls: List<Pair<String, String>> = emptyList()
         private set
+    var existingImportCandidates: Map<String, String> = emptyMap()
 
     override fun catalog(): List<LocalModel> = models
 
@@ -73,6 +74,9 @@ class FakeLocalModelRepository(
             isImport = true,
         )
     }
+
+    override fun findExistingImportCandidate(modelId: String): String? =
+        existingImportCandidates[modelId]
 
     override fun devicePerformance(modelId: String, contextTokens: Int): DevicePerformance =
         performance
