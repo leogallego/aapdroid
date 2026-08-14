@@ -328,7 +328,7 @@ class ModelDownloadForegroundObserverTest {
     }
 
     @Test
-    fun actionStop_clearsDesiredAndStopsWithoutCancel() = runTest {
+    fun actionStop_stopsWhenDesiredInactiveWithoutCancel() = runTest {
         val repo = FakeLocalModelRepository()
         val context = RuntimeEnvironment.getApplication()
         ModelDownloadForegroundService.desiredActive = true
@@ -354,6 +354,8 @@ class ModelDownloadForegroundObserverTest {
                 ModelDownloadForegroundService::class.java,
                 Intent(context, ModelDownloadForegroundService::class.java),
             ).create().get()
+            // Observer clears the latch before enqueueing ACTION_STOP.
+            ModelDownloadForegroundService.desiredActive = false
             service.onStartCommand(
                 Intent(context, ModelDownloadForegroundService::class.java).apply {
                     action = ModelDownloadForegroundService.ACTION_STOP
@@ -363,6 +365,60 @@ class ModelDownloadForegroundObserverTest {
             )
             assertEquals(0, repo.cancelCount)
             assertFalse(ModelDownloadForegroundService.desiredActive)
+        } finally {
+            org.koin.core.context.stopKoin()
+        }
+    }
+
+    @Test
+    fun actionStop_ignoredWhenDesiredActiveAgainAfterRetry() = runTest {
+        val repo = FakeLocalModelRepository()
+        val context = RuntimeEnvironment.getApplication()
+        ModelDownloadForegroundService.desiredActive = true
+        repo.emit(
+            LocalModelDownloadState.Downloading(
+                modelId = "gemma-4-e4b-it",
+                bytesReceived = 500L,
+                totalBytes = 1_000L,
+                isImport = false,
+            ),
+        )
+        org.koin.core.context.startKoin {
+            modules(
+                org.koin.dsl.module {
+                    single<io.github.leogallego.ansiblejane.assistant.local.ILocalModelRepository> {
+                        repo
+                    }
+                },
+            )
+        }
+        try {
+            val controller = org.robolectric.Robolectric.buildService(
+                ModelDownloadForegroundService::class.java,
+                Intent(context, ModelDownloadForegroundService::class.java),
+            ).create()
+            val service = controller.get()
+            // Stale STOP from a prior terminal state arrives after a retry already
+            // flipped desiredActive back to true — must not tear down the new session.
+            ModelDownloadForegroundService.desiredActive = true
+            service.onStartCommand(
+                Intent(context, ModelDownloadForegroundService::class.java).apply {
+                    action = ModelDownloadForegroundService.ACTION_STOP
+                },
+                0,
+                1,
+            )
+            assertEquals(0, repo.cancelCount)
+            assertTrue(ModelDownloadForegroundService.desiredActive)
+            assertEquals(
+                LocalModelDownloadState.Downloading(
+                    modelId = "gemma-4-e4b-it",
+                    bytesReceived = 500L,
+                    totalBytes = 1_000L,
+                    isImport = false,
+                ),
+                repo.downloadState.value,
+            )
         } finally {
             org.koin.core.context.stopKoin()
         }

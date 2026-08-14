@@ -107,8 +107,15 @@ class ModelDownloadForegroundService : Service() {
                 return START_NOT_STICKY
             }
             ACTION_STOP -> {
-                desiredActive = false
-                stopAndClear()
+                // Honor STOP only while the observer still wants us down. A terminal
+                //→retry can enqueue STOP then set desiredActive=true for a new
+                // download; an unconditional clear here would kill the new session
+                // and leave the transfer without FGS (#498 Bugbot).
+                if (!desiredActive) {
+                    stopAndClear()
+                } else if (!observing) {
+                    startObserving()
+                }
                 return START_NOT_STICKY
             }
         }
