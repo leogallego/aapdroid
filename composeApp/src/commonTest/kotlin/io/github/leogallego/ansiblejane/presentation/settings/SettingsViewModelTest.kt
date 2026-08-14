@@ -28,6 +28,7 @@ import io.ktor.http.HttpHeaders
 import io.ktor.http.HttpStatusCode
 import io.ktor.http.headersOf
 import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.test.UnconfinedTestDispatcher
 import kotlinx.coroutines.test.advanceUntilIdle
 import kotlinx.coroutines.test.runTest
 import kotlinx.serialization.json.Json
@@ -91,6 +92,7 @@ class SettingsViewModelTest {
     private fun createViewModel(
         localTools: List<LocalTool> = emptyList(),
         localModelRepository: FakeLocalModelRepository = fakeLocalModelRepo,
+        ioDispatcher: kotlinx.coroutines.CoroutineDispatcher = UnconfinedTestDispatcher(),
     ) = SettingsViewModel(
         tokenManager = fakeTokenManager,
         authRepository = fakeAuthRepository,
@@ -113,7 +115,8 @@ class SettingsViewModelTest {
                     }
                 }
             }
-        }
+        },
+        ioDispatcher = ioDispatcher,
     )
 
     @Test
@@ -544,5 +547,35 @@ class SettingsViewModelTest {
 
         val ready = assertIs<SettingsUiState.Ready>(viewModel.uiState.value)
         assertEquals(8_192, ready.localModelContextTokens["gemma-4-e4b-it"])
+    }
+
+    @Test
+    fun `Downloads existingImportPath appears after Ready when candidate exists`() = runTest {
+        // Regression #493: refresh must run after Ready (not while Loading) and via
+        // injected ioDispatcher so withContext does not hang under runTest.
+        fakeLocalModelRepo.existingImportCandidates = mapOf(
+            "gemma-4-e4b-it" to "/fake/Downloads/gemma.litertlm",
+        )
+        val viewModel = createViewModel()
+        advanceUntilIdle()
+
+        val ready = assertIs<SettingsUiState.Ready>(viewModel.uiState.value)
+        val model = ready.localModelCatalog.first { it.id == "gemma-4-e4b-it" }
+        assertEquals("/fake/Downloads/gemma.litertlm", model.existingImportPath)
+    }
+
+    @Test
+    fun `Downloads existingImportPath stays null when model already ready`() = runTest {
+        fakeLocalModelRepo = FakeLocalModelRepository(readyIds = setOf("gemma-4-e4b-it"))
+        fakeLocalModelRepo.existingImportCandidates = mapOf(
+            "gemma-4-e4b-it" to "/fake/Downloads/gemma.litertlm",
+        )
+        val viewModel = createViewModel(localModelRepository = fakeLocalModelRepo)
+        advanceUntilIdle()
+
+        val ready = assertIs<SettingsUiState.Ready>(viewModel.uiState.value)
+        val model = ready.localModelCatalog.first { it.id == "gemma-4-e4b-it" }
+        assertNull(model.existingImportPath)
+        assertTrue("gemma-4-e4b-it" in ready.localReadyIds)
     }
 }

@@ -22,6 +22,8 @@ import io.github.leogallego.ansiblejane.assistant.tools.ToolSource
 import io.github.leogallego.ansiblejane.ui.components.DateFormatter
 import io.github.leogallego.ansiblejane.ui.components.TimeFormat
 import io.ktor.http.parseUrl
+import kotlinx.coroutines.CoroutineDispatcher
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -32,6 +34,7 @@ import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import kotlinx.serialization.json.Json
 import kotlinx.datetime.TimeZone
 
@@ -46,7 +49,9 @@ class SettingsViewModel(
     private val toolRouter: ToolRouter,
     private val localModelRepository: ILocalModelRepository,
     private val json: Json,
-    private val modelFetcher: ModelFetcher
+    private val modelFetcher: ModelFetcher,
+    /** Off-main dispatcher for local-model FS discovery; tests inject a test dispatcher. */
+    private val ioDispatcher: CoroutineDispatcher = Dispatchers.Default,
 ) : ViewModel() {
 
     private val _uiState = MutableStateFlow<SettingsUiState>(SettingsUiState.Loading)
@@ -161,8 +166,20 @@ class SettingsViewModel(
                     expandedMcpServers = preservedExpandedMcp,
                     expandedCategories = preservedExpandedCats
                 )
-            }.collect { state ->
-                _uiState.update { state }
+            }.collect { incoming ->
+                // Keep refresh-owned local-model fields. A combine transform can
+                // capture Ready before Downloads discovery finishes and later
+                // overwrite existingImportPath (#493).
+                _uiState.update { prev ->
+                    if (prev is SettingsUiState.Ready && incoming is SettingsUiState.Ready) {
+                        incoming.copy(
+                            localReadyIds = prev.localReadyIds,
+                            localModelCatalog = prev.localModelCatalog,
+                        )
+                    } else {
+                        incoming
+                    }
+                }
             }
         }
 
@@ -211,8 +228,10 @@ class SettingsViewModel(
             }
         }
 
-        // Best-effort Downloads discovery (#479); single File.exists per catalog row.
+        // Best-effort Downloads discovery (#479). Wait for Ready so updateReady is
+        // not a no-op while Loading (#493); hop off Main for FS I/O.
         viewModelScope.launch {
+            uiState.first { it is SettingsUiState.Ready }
             refreshLocalReadyIds()
         }
     }
@@ -465,9 +484,11 @@ class SettingsViewModel(
             model.toUi(existingImportPath = existing)
         }
 
-    private fun refreshLocalReadyIds() {
-        val readyIds = computeLocalReadyIds()
-        val catalogUi = buildLocalModelCatalog(readyIds)
+    private suspend fun refreshLocalReadyIds() {
+        val (readyIds, catalogUi) = withContext(ioDispatcher) {
+            val readyIds = computeLocalReadyIds()
+            readyIds to buildLocalModelCatalog(readyIds)
+        }
         updateReady {
             copy(
                 localReadyIds = readyIds,
