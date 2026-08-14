@@ -150,6 +150,62 @@ class LocalModelRepositoryTest {
     }
 
     @Test
+    fun cancelDownload_stillWorksAfterCallerScopeCancelled() = runTest {
+        // Process scope owns the transfer; a separate caller scope simulates
+        // Settings viewModelScope leaving mid-download (#492).
+        val model = testModel(sha256 = payloadSha256, sizeBytes = payload.size.toLong())
+        val root = newRoot()
+        val engine = MockEngine {
+            delay(10_000)
+            respond(
+                content = payload,
+                status = HttpStatusCode.OK,
+                headers = headersOf(HttpHeaders.ContentType, "application/octet-stream"),
+            )
+        }
+        val client = HttpClient(engine) { expectSuccess = false }
+        val processScope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
+        scopes += processScope
+        val repo = LocalModelRepository(
+            deviceResources = FakeDeviceResources(
+                freeDiskBytes = model.sizeBytes + diskBufferBytes + 1,
+                modelStorageDirectory = root,
+            ),
+            httpClient = client,
+            scope = processScope,
+            catalog = listOf(model),
+            modelRootOverride = root,
+        )
+
+        val callerScope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
+        scopes += callerScope
+        callerScope.launch { repo.download(model.id) }
+
+        var attempts = 0
+        while (repo.downloadState.value !is LocalModelDownloadState.Downloading && attempts < 100) {
+            delay(50)
+            attempts++
+        }
+        assertIs<LocalModelDownloadState.Downloading>(repo.downloadState.value)
+
+        callerScope.cancel()
+        delay(100)
+        assertIs<LocalModelDownloadState.Downloading>(
+            repo.downloadState.value,
+            "process-scoped transfer must keep running after caller cancel",
+        )
+
+        repo.cancelDownload()
+        attempts = 0
+        while (repo.downloadState.value is LocalModelDownloadState.Downloading && attempts < 100) {
+            delay(50)
+            attempts++
+        }
+        assertIs<LocalModelDownloadState.Idle>(repo.downloadState.value)
+        assertFalse(repo.isReady(model.id))
+    }
+
+    @Test
     fun download_diskCheckCreditsExistingPartial() = runTest {
         val model = testModel(sha256 = payloadSha256, sizeBytes = 1_000L)
         val root = newRoot()

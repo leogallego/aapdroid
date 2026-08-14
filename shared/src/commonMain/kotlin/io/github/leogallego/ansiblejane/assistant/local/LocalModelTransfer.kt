@@ -106,21 +106,26 @@ internal class LocalModelTransfer(
     }
 
     private suspend fun runExclusiveTransfer(block: suspend () -> Unit) {
+        // Launch on the process-scoped [scope] so the transfer survives Settings
+        // leaving (caller cancel). Clear [transferJob] only when *this* job
+        // completes — never in a finally around join(), or cancelDownload()
+        // loses the handle while the transfer keeps running (#492).
         val job = synchronized(transferJobLock) {
             transferJob?.cancel()
             scope.launch {
-                block()
+                try {
+                    block()
+                } finally {
+                    val self = currentCoroutineContext()[Job]
+                    synchronized(transferJobLock) {
+                        if (transferJob === self) {
+                            transferJob = null
+                        }
+                    }
+                }
             }.also { transferJob = it }
         }
-        try {
-            job.join()
-        } finally {
-            synchronized(transferJobLock) {
-                if (transferJob === job) {
-                    transferJob = null
-                }
-            }
-        }
+        job.join()
     }
 
     private suspend fun runImport(
