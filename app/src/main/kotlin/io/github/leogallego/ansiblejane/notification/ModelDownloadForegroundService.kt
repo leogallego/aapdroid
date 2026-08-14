@@ -8,6 +8,8 @@ import android.app.Service
 import android.content.Intent
 import android.content.pm.ServiceInfo
 import android.os.IBinder
+import android.os.SystemClock
+import android.util.Log
 import androidx.core.app.NotificationCompat
 import androidx.core.app.ServiceCompat
 import io.github.leogallego.ansiblejane.MainActivity
@@ -28,6 +30,8 @@ import org.koin.android.ext.android.inject
  * SAF/import transfers never start this service — see [ModelDownloadForegroundObserver].
  * Observes [ILocalModelRepository.downloadState] for progress and self-stops on
  * Idle / Error / Succeeded / cancel, or when the OS fires [onTimeout].
+ *
+ * Progress notifications are throttled (#494) to avoid per-buffer notify floods.
  */
 class ModelDownloadForegroundService : Service() {
 
@@ -35,11 +39,38 @@ class ModelDownloadForegroundService : Service() {
         const val CHANNEL_ID = "litert_model_download"
         const val NOTIFICATION_ID = 0x4A414E46 // "JANF" — distinct from approval summary
         const val ACTION_CANCEL = "io.github.leogallego.ansiblejane.action.CANCEL_MODEL_DOWNLOAD"
+        /** Observer stop handshake — always paired with startForegroundService (#494). */
+        const val ACTION_STOP = "io.github.leogallego.ansiblejane.action.STOP_MODEL_DOWNLOAD"
+        internal const val NOTIFY_MIN_INTERVAL_MS = 300L
+
+        /**
+         * Desired running flag set by [ModelDownloadForegroundObserver].
+         * Checked after [startForeground] so a raced stop cannot skip the FG contract.
+         */
+        @Volatile
+        var desiredActive: Boolean = false
+
+        private const val TAG = "ModelDownloadFgs"
+
+        /** Pure throttle gate for tests and [notifyProgress]. */
+        internal fun shouldPublishProgress(
+            lastNotifyAtElapsedMs: Long,
+            lastNotifiedPercent: Int?,
+            percent: Int?,
+            nowElapsedMs: Long,
+            minIntervalMs: Long = NOTIFY_MIN_INTERVAL_MS,
+        ): Boolean {
+            if (lastNotifyAtElapsedMs == 0L) return true
+            if (percent != null && percent != lastNotifiedPercent) return true
+            return nowElapsedMs - lastNotifyAtElapsedMs >= minIntervalMs
+        }
     }
 
     private val repository: ILocalModelRepository by inject()
     private val serviceScope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
     private var observing = false
+    private var lastNotifyAtElapsedMs = 0L
+    private var lastNotifiedPercent: Int? = null
 
     override fun onCreate() {
         super.onCreate()
@@ -52,19 +83,43 @@ class ModelDownloadForegroundService : Service() {
                 ServiceInfo.FOREGROUND_SERVICE_TYPE_DATA_SYNC,
             )
             true
-        } catch (_: Exception) {
+        } catch (e: Exception) {
+            Log.w(TAG, "startForeground failed", e)
             false
         }
         if (!started) {
             stopSelf()
             return
         }
+        if (!desiredActive) {
+            stopAndClear()
+            return
+        }
         startObserving()
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
-        if (intent?.action == ACTION_CANCEL) {
-            repository.cancelDownload()
+        when (intent?.action) {
+            ACTION_CANCEL -> {
+                repository.cancelDownload()
+                desiredActive = false
+                stopAndClear()
+                return START_NOT_STICKY
+            }
+            ACTION_STOP -> {
+                // Honor STOP only while the observer still wants us down. A terminal
+                //→retry can enqueue STOP then set desiredActive=true for a new
+                // download; an unconditional clear here would kill the new session
+                // and leave the transfer without FGS (#498 Bugbot).
+                if (!desiredActive) {
+                    stopAndClear()
+                } else if (!observing) {
+                    startObserving()
+                }
+                return START_NOT_STICKY
+            }
+        }
+        if (!desiredActive) {
             stopAndClear()
             return START_NOT_STICKY
         }
@@ -78,6 +133,7 @@ class ModelDownloadForegroundService : Service() {
 
     override fun onTimeout(startId: Int, fgsType: Int) {
         repository.cancelDownload()
+        desiredActive = false
         stopAndClear()
     }
 
@@ -96,6 +152,7 @@ class ModelDownloadForegroundService : Service() {
                 when (state) {
                     is LocalModelDownloadState.Downloading -> {
                         if (state.isImport) {
+                            desiredActive = false
                             stopAndClear()
                         } else {
                             val percent = progressPercent(state.bytesReceived, state.totalBytes)
@@ -112,7 +169,10 @@ class ModelDownloadForegroundService : Service() {
                             )
                         }
                     }
-                    else -> stopAndClear()
+                    else -> {
+                        desiredActive = false
+                        stopAndClear()
+                    }
                 }
             }
         }
@@ -123,10 +183,20 @@ class ModelDownloadForegroundService : Service() {
 
     private fun progressPercent(bytesReceived: Long, totalBytes: Long): Int? {
         if (totalBytes <= 0L) return null
-        return ((bytesReceived * 100L) / totalBytes).toInt().coerceIn(0, 100)
+        return ((bytesReceived * 100L) / totalBytes).toInt().coerceAtLeast(0).coerceAtMost(100)
     }
 
+    /**
+     * Notify at most once per [NOTIFY_MIN_INTERVAL_MS] unless the rounded percent changes.
+     * First update always goes through.
+     */
     private fun notifyProgress(title: String, text: String, percent: Int?) {
+        val now = SystemClock.elapsedRealtime()
+        if (!shouldPublishProgress(lastNotifyAtElapsedMs, lastNotifiedPercent, percent, now)) {
+            return
+        }
+        lastNotifyAtElapsedMs = now
+        lastNotifiedPercent = percent
         val manager = getSystemService(NotificationManager::class.java)
         manager.notify(
             NOTIFICATION_ID,
