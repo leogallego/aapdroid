@@ -57,10 +57,14 @@ class ModelDownloadForegroundObserver(
         }
     }
 
-    /** Retry FGS when returning to foreground if download is still active (#494). */
+    /**
+     * Retry FGS when returning to foreground if download is still active (#494).
+     * Do **not** force [ModelDownloadForegroundService.desiredActive] back to true —
+     * notification Cancel clears that latch while [networkDownloadDesired] can lag
+     * until Idle; forcing true would revive the FGS after Cancel.
+     */
     override fun onActivityStarted(activity: Activity) {
-        if (networkDownloadDesired) {
-            ModelDownloadForegroundService.desiredActive = true
+        if (networkDownloadDesired && ModelDownloadForegroundService.desiredActive) {
             requestStart()
         }
     }
@@ -84,18 +88,16 @@ class ModelDownloadForegroundObserver(
     private fun requestStop() {
         try {
             // Handshake: deliver stop through startForegroundService so onCreate can
-            // always call startForeground before tearing down (#494).
+            // always call startForeground before tearing down (#494). Never fall back
+            // to stopService — that reintroduces the pre-startForeground race.
             val intent = Intent(appContext, ModelDownloadForegroundService::class.java).apply {
                 action = ModelDownloadForegroundService.ACTION_STOP
             }
             ContextCompat.startForegroundService(appContext, intent)
         } catch (e: Exception) {
-            Log.w(TAG, "Unable to signal model download FGS stop; falling back", e)
-            try {
-                appContext.stopService(Intent(appContext, ModelDownloadForegroundService::class.java))
-            } catch (stopError: Exception) {
-                Log.w(TAG, "Unable to stop model download FGS", stopError)
-            }
+            // desiredActive is already false; a pending onCreate will startForeground
+            // then stopAndClear(), or the service's downloadState collector will tear down.
+            Log.w(TAG, "Unable to signal model download FGS stop", e)
         }
     }
 

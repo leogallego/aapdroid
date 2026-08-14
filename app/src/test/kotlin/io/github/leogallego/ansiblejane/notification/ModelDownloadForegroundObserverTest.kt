@@ -217,6 +217,39 @@ class ModelDownloadForegroundObserverTest {
     }
 
     @Test
+    fun onActivityStarted_doesNotReviveFgs_afterCancelClearsDesiredActive() = runTest {
+        val dispatcher = UnconfinedTestDispatcher(testScheduler)
+        val scope = TestScope(dispatcher)
+        val repo = FakeLocalModelRepository()
+        val context = RuntimeEnvironment.getApplication()
+        val shadow = shadowOf(context)
+        val observer = ModelDownloadForegroundObserver(context, repo, scope)
+        observer.start()
+
+        repo.emit(
+            LocalModelDownloadState.Downloading(
+                modelId = "gemma-4-e4b-it",
+                bytesReceived = 1_000L,
+                totalBytes = 10_000L,
+                isImport = false,
+            ),
+        )
+        advanceUntilIdle()
+        assertNotNull(shadow.nextStartedService)
+
+        // Notification Cancel clears desiredActive while downloadState may still be
+        // Downloading briefly — retry must not force the latch back on.
+        ModelDownloadForegroundService.desiredActive = false
+        observer.onActivityStarted(
+            org.robolectric.Robolectric.buildActivity(android.app.Activity::class.java).get(),
+        )
+        advanceUntilIdle()
+
+        assertNull(shadow.nextStartedService)
+        assertFalse(ModelDownloadForegroundService.desiredActive)
+    }
+
+    @Test
     fun progressThrottle_publishesFirstAndPercentOrIntervalChanges() {
         assertTrue(
             ModelDownloadForegroundService.shouldPublishProgress(
