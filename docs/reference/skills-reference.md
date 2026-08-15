@@ -93,7 +93,7 @@ Paths below are relative to `.agents/skills/`.
 | **Edge-to-edge** | `android-official/edge-to-edge.md` |
 | **Gradle config** | `android-community/gradle-configuration.md` |
 | **Architecture review** | `kotlin-project-architecture-review/` |
-| **PR contract review** | `pr-architecture-review/` (project-specific, checks `docs/architecture/service-contracts.md`) |
+| **PR / branch contract review** | `git-review` (ai-skills-git) + `docs/architecture/service-contracts.md` |
 | **Post-PR review → merge** | `post-pr-review-merge/` (architecture + Kotlin review, fix loop, merge when CI green) |
 | **Feature implementation** | `kotlin-project-feature-implementation/` |
 | **Bug fixing** | `kotlin-project-bugfix/` |

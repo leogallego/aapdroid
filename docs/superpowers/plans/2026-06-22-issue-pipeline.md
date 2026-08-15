@@ -353,7 +353,7 @@ Assisted-by: <model name> <noreply@anthropic.com>"
 - [ ] **Step 1: Write Phase 5 — Implementation Review**
 
 Document the 4 review angles:
-1. Architecture review (using `pr-architecture-review` skill or equivalent architecture docs)
+1. Architecture review (using `git-review` + `docs/architecture/service-contracts.md`)
 2. Code quality review (using `/code-review` or equivalent)
 3. Security review (using `/security-review` or equivalent)
 4. Skill compliance (checking changed files against loaded skills)

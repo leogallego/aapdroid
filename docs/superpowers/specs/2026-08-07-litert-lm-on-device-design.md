@@ -49,7 +49,8 @@ Rejected alternatives:
 
 ## Contract compliance
 
-Checked against `docs/architecture/service-contracts.md` and `skills/pr-architecture-review/SKILL.md`.
+Checked against `docs/architecture/service-contracts.md` via `git-review`
+(formerly `skills/pr-architecture-review/SKILL.md`).
 
 | Rule | How this design complies |
 |------|---------------------------|

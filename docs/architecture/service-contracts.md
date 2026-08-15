@@ -1,7 +1,8 @@
 # Ansible Jane — Architecture Service Contracts
 
 This document defines the enforceable architecture contracts for the Ansible Jane codebase.
-These contracts are checked during PR review (see `.agents/skills/pr-architecture-review/SKILL.md`).
+These contracts are reviewed by `git-review` (ai-skills-git). See `.git-pipeline.yml`
+→ `architecture.contracts`.
 
 Violations of **hard rules** must be fixed before merge. **Soft guidelines** are advisory
 and flagged as recommendations.
@@ -42,6 +43,27 @@ layers below it. No layer skipping is permitted.
 └─────────────────────────────────────────────────────┘
 ```
 
+### Layer map
+
+Classify changed files for `git-review`. Unmapped paths → Info (or skip if non-code).
+
+| Layer | Path / package patterns |
+|-------|-------------------------|
+| UI | `ui/`, `screen/`, `component/`, Composable functions |
+| Presentation | `presentation/`, `*ViewModel.kt` |
+| Engine | `assistant/engine/`, `ChatEngine`, `ToolRouter`, `ToolExecutor` |
+| Repository | `data/`, `*Repository.kt`, `*Manager.kt` |
+| Network | `network/`, `*ApiClient.kt`, `*ApiService.kt`, `mcp/` |
+| Platform | `platform/`, `androidMain/`, `jvmMain/`, `desktopMain/` |
+| Model | `model/` (domain data classes / sealed classes used across layers) |
+| DI | `di/`, `*Module.kt` |
+| Tools | `tools/`, `*LocalTool.kt`, `*McpTool.kt` |
+| Test | `*Test.kt`, `test/`, `commonTest/`, `desktopTest/` |
+
+When multiple rows match, prefer **Test** for `*Test.kt` / `*Test/` source sets;
+otherwise prefer the most specific package path (`assistant/engine/` over a bare
+type name).
+
 ### Hard Rules
 
 - **No layer skipping.** UI must not import from Repository, Network, or Platform
@@ -53,6 +75,10 @@ layers below it. No layer skipping is permitted.
   goes through ViewModel state observation (`collectAsState`).
 - **ViewModels never instantiate HTTP clients.** Network access goes through
   repositories, which use `IAapApiProvider`.
+
+**Check tip (layer discipline):** for each changed production file,
+`grep -n "^import"` and verify imports against these Hard Rules (no layer skip /
+no upward deps).
 
 ### Permitted Exception
 
@@ -446,10 +472,60 @@ the §2 same-package guideline so presentation never imports `network`.
 
 ---
 
+## Companion skills for review
+
+Used by `git-review` / assess. Do not fold these skills into this document.
+Report format is portable `git-review` `report-format.md` (must-fix / consider /
+Info / Verdict) — do not invent a Jane-specific report template.
+
+### Always load (core)
+
+| Skill path |
+|------------|
+| `skills/kotlin-coroutines-structured-concurrency/SKILL.md` |
+| `skills/kotlin-flow-state-event-modeling/SKILL.md` |
+| `skills/kotlin-multiplatform-expect-actual/SKILL.md` |
+| `skills/android-community/koin-editor.md` |
+
+Also list the three directory-based cores under `.git-pipeline.yml` →
+`always_load_review_skills` (plus `git-review`). `koin-editor` is not a top-level
+skill directory; load it by path from this table when reviewing.
+
+### Auto-load by changed files
+
+| Changed files match | Load |
+|---------------------|------|
+| `ui/`, `presentation/`, `*Screen.kt` | `skills/compose-skill/SKILL.md` |
+| `ui/`, `*Screen.kt` with state hoisting | `skills/compose-state-hoisting/SKILL.md` |
+| `assistant/engine/`, module boundaries (`shared`↔`composeApp`↔`app`) | `skills/kotlin-project-architecture-review/SKILL.md` |
+| `data/`, `*Repository.kt`, `network/` | `skills/kotlin-data-kmp-data-layer/SKILL.md` |
+| `platform/`, `expect`/`actual` | `skills/kotlin-kmp-abstraction-decision/SKILL.md` |
+| `*Test.kt`, test infrastructure | `skills/kotlin-testing-kmp/SKILL.md`, `skills/compose-ui-testing-patterns/SKILL.md` |
+| `*ViewModel.kt`, state management | `skills/kotlin-flow-state-event-modeling/SKILL.md` |
+| Navigation, routing | `skills/kotlin-navigation-compose-multiplatform/SKILL.md` |
+| Compose performance concerns | `skills/compose-recomposition-performance/SKILL.md` |
+
+**Escalation:** if the verdict would be structural / unclear contracts / large
+engine or module-boundary change, load `kotlin-project-architecture-review`
+even if the auto row did not fire, and prefer verdict **Needs architecture
+discussion**.
+
+---
+
 ## Versioning and Maintenance
 
 This document follows the project's semver scheme. Updates require a PR with
-rationale for the change. The PR review skill checks against the version in `main`.
+rationale for the change. `git-review` checks against the version in `main`.
+
+When architecture evolves (new modules, patterns, or exceptions):
+
+1. Update this file (`docs/architecture/service-contracts.md`)
+2. Bump the version in the changelog below
+3. Update `.git-pipeline.yml` only if contract/provider paths move
+4. The PR introducing the change should document why the contract changed
+
+Do **not** put project hard rules into a fat project review skill — procedure
+lives in portable `git-review`; rules live here.
 
 ### Lifecycle tags
 
@@ -476,3 +552,4 @@ tombstones or "removed" markers.
 | 1.3.2 | 2026-08-06 | Document `:baselineprofile` module + JUnit4 Macrobenchmark exception (#214) |
 | 1.3.3 | 2026-08-08 | Document on-device LLM behind `LlmProvider` + `ILocalModelRepository` (#264) |
 | 1.3.4 | 2026-08-08 | Document configurable on-device LiteRT context window (#470) |
+| 1.4.0 | 2026-08-14 | Layer map + companion skills for `git-review` migration |

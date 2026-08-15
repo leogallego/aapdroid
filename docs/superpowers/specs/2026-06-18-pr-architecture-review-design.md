@@ -1,7 +1,10 @@
 # PR Architecture Review Skill — Design Spec
 
 **Date:** 2026-06-18
-**Status:** Approved
+**Status:** Superseded (2026-08-14) — live review is `git-review` +
+`docs/architecture/service-contracts.md` (see
+`docs/superpowers/specs/2026-08-08-git-review-migration.md`). This doc remains
+historical design notes for the former `skills/pr-architecture-review/` skill.
 
 ## Problem
 

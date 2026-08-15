@@ -87,7 +87,11 @@ Formal contracts are documented in `docs/architecture/service-contracts.md`. Key
 - **State exposure**: ViewModels expose `StateFlow<XxxUiState>`, never `MutableStateFlow`. UiState uses sealed classes with `Idle`/`Loading`/`Success`/`Error`.
 - **Tool contracts**: Local tools implement the `LocalTool` interface. MCP tools are instances of the `McpTool` class. Both satisfy the `Tool` interface.
 
-When reviewing PRs, load the `.agents/skills/pr-architecture-review/SKILL.md` skill to check changes against these contracts. It auto-loads relevant Kotlin/Android skills based on which files changed.
+When reviewing PRs (or a branch diff before opening one), use `git-review`
+(ai-skills-git) against `docs/architecture/service-contracts.md` (see
+`.git-pipeline.yml` → `architecture.contracts`). Companion Kotlin/Compose/Koin
+skills load from the contracts companion table and
+`always_load_review_skills`.
 
 ## AI Assistant Architecture
 
