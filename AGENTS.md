@@ -21,7 +21,7 @@ Sources and licenses: `.agents/skills/README.md`
 | Task | Skill |
 |------|-------|
 | After creating a PR (review → fix → merge) | `.agents/skills/post-pr-review-merge/SKILL.md` |
-| PR architecture / service contracts | `.agents/skills/pr-architecture-review/SKILL.md` |
+| PR architecture / service contracts | `git-review` (ai-skills-git) + `docs/architecture/service-contracts.md` (see `.git-pipeline.yml`) |
 | Kotlin/KMP implementation review | `.agents/skills/kotlin-kmp-code-review/SKILL.md` |
 | Issue end-to-end pipeline | `.agents/skills/issue-pipeline/SKILL.md` |
 

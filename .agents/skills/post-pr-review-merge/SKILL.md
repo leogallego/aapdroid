@@ -54,7 +54,8 @@ If no PR exists, stop and create one first (do not invent a merge target).
 
 ### 2. Architecture review
 
-Read and follow `.agents/skills/pr-architecture-review/SKILL.md` end-to-end on this PR's diff.
+Run `git-review` (ai-skills-git) against `docs/architecture/service-contracts.md`
+(see `.git-pipeline.yml` → `architecture.contracts`) end-to-end on this PR's diff.
 
 Classify findings:
 
@@ -84,14 +85,17 @@ Always read and apply:
 
 - `.agents/skills/kotlin-kmp-code-review/SKILL.md`
 
-Also load (via `pr-architecture-review` auto-detect + this list) any skills matching changed files — at minimum the core set from architecture review:
+Also load (via contracts companion auto-load + this list) any skills matching
+changed files — at minimum the core set from
+`docs/architecture/service-contracts.md` → Companion skills for review:
 
 - `.agents/skills/kotlin-coroutines-structured-concurrency/SKILL.md`
 - `.agents/skills/kotlin-flow-state-event-modeling/SKILL.md`
 - `.agents/skills/kotlin-multiplatform-expect-actual/SKILL.md`
 - `.agents/skills/android-community/koin-editor.md`
 
-Plus file-matched skills from `docs/reference/skills-reference.md` / architecture review Step 4.
+Plus file-matched skills from the contracts Auto-load table /
+`docs/reference/skills-reference.md`.
 
 Treat high-risk / security / correctness / architecture-drift findings as **must-fix**. Treat optional follow-up refactors as **deferred**, **info**, or **warning**.
 
@@ -211,7 +215,7 @@ If any deferred/info/warning still has an action, **do not merge**. Leave the PR
 
 ## Related skills
 
-- `.agents/skills/pr-architecture-review/SKILL.md` — contract review
+- `git-review` (ai-skills-git) + `docs/architecture/service-contracts.md` — contract review
 - `.agents/skills/kotlin-kmp-code-review/SKILL.md` — implementation review
 - `.agents/skills/kotlin-project-architecture-review/SKILL.md` — escalate only when structural change warrants it
 - `docs/reference/skills-reference.md` — skill lookup by changed files

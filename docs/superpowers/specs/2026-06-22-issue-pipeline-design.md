@@ -302,7 +302,8 @@ Reviews the implementation plan against service contracts and architecture rules
 
 ### Review
 
-Run `pr-architecture-review` skill against the plan. The reviewer checks:
+Run `git-review` against the plan (contracts in
+`docs/architecture/service-contracts.md`). The reviewer checks:
 - Does the plan place code in the right modules and source sets?
 - Does it create interfaces where service contracts require them?
 - Does it follow the layer architecture (UI → Presentation → Engine → Repository → Network → Platform)?
@@ -390,7 +391,7 @@ Reviews the actual code changes after implementation. Four independent review an
 
 | # | Angle | What it checks | Tool/Skill |
 |---|-------|----------------|------------|
-| 1 | Architecture | Layer violations, module boundary crossings, interface contracts, state exposure, DI rules, naming, file size thresholds | `pr-architecture-review` skill against `service-contracts.md` |
+| 1 | Architecture | Layer violations, module boundary crossings, interface contracts, state exposure, DI rules, naming, file size thresholds | `git-review` against `service-contracts.md` |
 | 2 | Code quality | Bugs, logic errors, edge cases, code duplication, API misuse, missing error handling at boundaries | `/code-review` plugin |
 | 3 | Security | Hardcoded secrets, insecure storage, missing HTTPS enforcement, credential handling, injection vectors | `/security-review` plugin |
 | 4 | Skill compliance | Check changed files against loaded skills — Compose patterns, test patterns, state management, KMP rules | Relevant skills loaded per file type |

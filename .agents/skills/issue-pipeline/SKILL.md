@@ -586,7 +586,12 @@ Where `<base-branch>` is `main` (for first in chain / standalone) or the previou
 
 Before dispatching reviewers, load the project's core review skills. These are skills that apply to **every** review regardless of which files changed.
 
-Check the foundation context for a project-specific architecture review skill (e.g., `pr-architecture-review`). If it documents "always load" or "core" skills, load all of them. These typically cover foundational patterns like concurrency, state management, multiplatform abstractions, and DI — areas where violations are subtle and file-pattern matching alone won't catch them.
+Check the foundation context / `.git-pipeline.yml` for architecture review wiring
+(`git-review` + `architecture.contracts`). Load `git-review` and any skills listed
+under contracts **Always load (core)** / `always_load_review_skills`. These typically
+cover foundational patterns like concurrency, state management, multiplatform
+abstractions, and DI — areas where violations are subtle and file-pattern matching
+alone won't catch them.
 
 Pass these core skills to the architecture and skill-compliance reviewers alongside the dynamically matched skills from Phase 1.
 

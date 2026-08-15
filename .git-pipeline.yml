@@ -1,0 +1,22 @@
+# git-pipeline conventions — Ansible Jane
+version: 1
+default_branch: main
+branch_pattern: "<type>/<n>-<slug>"
+merge_method: merge
+stack_ci: serial
+labels: true
+# Trailer template for commits/PRs — substitute Model-Name/Version per session.
+# Do not hardcode a specific model here.
+attribution: "Assisted-by: Cursor (Model-Name Model-Version)"
+test_commands:
+  - "./gradlew --no-daemon testDebugUnitTest :shared:jvmTest :composeApp:desktopTest --stacktrace --continue"
+lint_commands: []
+always_load_review_skills:
+  - git-review
+  - kotlin-coroutines-structured-concurrency
+  - kotlin-flow-state-event-modeling
+  - kotlin-multiplatform-expect-actual
+architecture:
+  contracts: docs/architecture/service-contracts.md
+forge:
+  provider: github

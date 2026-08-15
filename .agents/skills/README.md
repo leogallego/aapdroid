@@ -88,9 +88,14 @@ From [mmiani/kotlin-kmp-claude-agent-skills](https://github.com/mmiani/kotlin-km
 - **kotlin-kmp-refactor-safety** - 4-phase refactoring, parallel implementation prevention, rollback
 - **kotlin-kmp-code-review** - 24-priority architect-level review, escalation criteria
 
-### `pr-architecture-review/` - Project Architecture Contract Review
-Project-specific (Apache 2.0)
-- **pr-architecture-review** - PR review skill that checks changes against `docs/architecture/service-contracts.md`. Verifies layer discipline, interface contracts, module boundaries, state management, DI patterns. Auto-loads relevant Kotlin/Android skills based on changed files.
+### Architecture contract review (`git-review`)
+
+Portable procedure from **ai-skills-git** (installed under `~/.agents/skills/git-review`).
+Project rules live in `docs/architecture/service-contracts.md` (Layer map, hard/soft
+rules, companion skill table). Wire-up: `.git-pipeline.yml` →
+`architecture.contracts` + `always_load_review_skills`.
+
+Do **not** reintroduce a fat project `pr-architecture-review` skill.
 
 ### `post-pr-review-merge/` - Post-PR Review Fix Loop
 Project-specific (Apache 2.0)
