@@ -65,7 +65,7 @@ Prerequisite: `git-review` via `~/.agents/skills` from ai-skills-git
 `./scripts/install-agents.sh`.
 
 `koin-editor` is not a top-level skill directory (lives at
-`skills/android-community/koin-editor.md`). Keep it in the contracts **Always**
+`.agents/skills/android-community/koin-editor.md`). Keep it in the contracts **Always**
 table by path; agents load it when reading contracts. Do not invent a fake
 yaml skill name for it.
 
