@@ -57,8 +57,8 @@ this repo:
       - kotlin-multiplatform-expect-actual
     architecture:
       contracts: docs/architecture/service-contracts.md
-  (no skills/pr-architecture-review/)
-  skills/kotlin-* / compose-* / koin remain as companions
+  (no `.agents/skills/pr-architecture-review/`)
+  .agents/skills/kotlin-* / compose-* / koin remain as companions
 ```
 
 Prerequisite: `git-review` via `~/.agents/skills` from ai-skills-git
@@ -187,14 +187,15 @@ CI → empty `lint_commands`.
 
 ## 7. Delete / redirect project skill
 
-**Preferred:** delete `skills/pr-architecture-review/`.
+**Preferred:** delete `.agents/skills/pr-architecture-review/` (compat
+`skills/` symlink path is the same tree).
 
 Update:
 
-- `CLAUDE.md` (architecture review paragraph)
-- `skills/README.md` / `docs/reference/skills-reference.md`
+- `CLAUDE.md` / `AGENTS.md` (architecture review paragraphs)
+- `.agents/skills/README.md` / `docs/reference/skills-reference.md`
 - Active specs/plans that cite the old skill as the live review tool
-- `issue-pipeline` / local pipeline text if it hardcodes the name
+- `issue-pipeline` / `post-pr-review-merge` / local pipeline text if it hardcodes the name
 
 Historical design docs for the old skill may keep a short “superseded by
 `git-review`” note. Kotlin companion skills stay.
@@ -208,8 +209,8 @@ Work only under remote-aap / Jane:
 - [x] Add Layer map (+ companion table + escalation) to contracts
 - [x] Retarget contracts header / maintenance to `git-review`
 - [x] Create `.git-pipeline.yml` with `git-review` + cores + `architecture.contracts`
-- [x] Delete `skills/pr-architecture-review/`
-- [x] Update CLAUDE.md + skills reference docs + issue-pipeline
+- [x] Delete `.agents/skills/pr-architecture-review/`
+- [x] Update CLAUDE.md + AGENTS.md + skills reference docs + issue-pipeline + post-pr-review-merge
 - [x] Grep for leftover `pr-architecture-review` references
 - [x] Sanity: layer map + companions classify a sample Jane path set
 - [x] Commit / PR (user asks) — https://github.com/leogallego/ansible-jane/pull/499

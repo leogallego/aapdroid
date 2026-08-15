@@ -5,6 +5,8 @@ branch_pattern: "<type>/<n>-<slug>"
 merge_method: merge
 stack_ci: serial
 labels: true
+# Trailer template for commits/PRs — substitute Model-Name/Version per session.
+# Do not hardcode a specific model here.
 attribution: "Assisted-by: Cursor (Model-Name Model-Version)"
 test_commands:
   - "./gradlew --no-daemon testDebugUnitTest :shared:jvmTest :composeApp:desktopTest --stacktrace --continue"
